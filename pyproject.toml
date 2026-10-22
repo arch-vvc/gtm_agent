@@ -1,0 +1,21 @@
+[project]
+name = "gtm-agent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "arch-vvc", email = "pes1ug23am062@pesu.pes.edu" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.143.3",
+    "psycopg[binary]>=3.3.6",
+    "uvicorn>=0.54.0",
+]
+
+[project.scripts]
+gtm-agent = "gtm_agent:main"
+
+[build-system]
+requires = ["uv_build>=0.13.1,<0.14.0"]
+build-backend = "uv_build"
