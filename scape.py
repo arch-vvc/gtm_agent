@@ -8,13 +8,15 @@ headers={
 }
 
 def normalise_url(url):
-    url=url.strip()
+    url=url.strip().lower()
     if "://" not in url:
         url="https://"+url
-    host=urlparse(url).netloc.removeprefix("www.")
+    parsed=urlparse(url)
+    host=parsed.netloc.removeprefix("www.")
     if "." not in host:
         return None
-    return url
+    path=parsed.path.rstrip("/")
+    return "https://"+host+path
 
 def get_description(url):
     if "://" not in url:
