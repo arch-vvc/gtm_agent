@@ -30,6 +30,6 @@ def get_description(url):
     return {"name": name, "title": title, "description": tag["content"], "error": None}
 
 
-print(get_description("https://www.nexturn.com"))
-print(get_description("https://www.apple.com"))
-print(get_description("https://winstream.tech"))
+# print(get_description("https://www.nexturn.com"))
+# print(get_description("https://www.apple.com"))
+# print(get_description("https://winstream.tech"))

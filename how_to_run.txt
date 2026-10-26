@@ -1,3 +1,3 @@
-uv run uvicorn main:app --reload
-
-kill $(lsof -ti :8000)
+docker compose up -d --build   # start everything
+docker compose logs app        # see app output and errors
+docker compose down            # stop everything (data is kept)
