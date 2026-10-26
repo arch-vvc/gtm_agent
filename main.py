@@ -3,9 +3,10 @@ from fastapi import HTTPException
 from pydantic import BaseModel
 from psycopg.rows import dict_row
 import psycopg
+import os
 
 app = FastAPI()
-DB_URL="postgresql://postgres:secret@localhost:5432/gtm"
+DB_URL=os.environ["DB_URL"]
 
 class Leads(BaseModel):
     name: str
