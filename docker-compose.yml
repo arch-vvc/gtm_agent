@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres
+    environment:
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: gtm
+    ports:
+      - "5432:5432"
+    volumes:
+      - gtm_pgdata:/var/lib/postgresql
+
+  app:
+    build: .
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+
+volumes:
+  gtm_pgdata:
+    name: gtm_pgdata
