@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi import HTTPException
 from pydantic import BaseModel
 from psycopg.rows import dict_row
+from scape import normalise_url
 from enrich import enrich
 import psycopg
 import os
@@ -48,4 +49,21 @@ def get_all_leads():
 
 @app.post("/enrich")
 def enrich_company(req: EnrichRequest):
-    return enrich(req.url)
+    url=normalise_url(req.url)
+    if url is None:
+        raise HTTPException(status_code=400, detail="Invalid URL")
+    result=enrich(url)
+    company=result["company"]
+    with psycopg.connect(DB_URL) as conn:
+        row=conn.execute(
+            "INSERT INTO companies (url, name, industry, what_they_sell, target_customer, error) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+            (
+                url,
+                result["name"],
+                company.industry if company else None,
+                company.what_they_sell if company else None,
+                company.target_customer if company else None,
+                result["error"],
+            ),
+        ).fetchone()
+    return {"id": row[0], **result}
