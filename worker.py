@@ -7,6 +7,7 @@ import os
 DB_URL=os.environ["DB_URL"]
 r=redis.Redis(host="redis", decode_responses=True, socket_timeout=30)
 
+
 def save(url, result):
     company=result["company"]
     with psycopg.connect(DB_URL) as conn:
@@ -26,6 +27,7 @@ def save(url, result):
         return find_company(url)
     return row[0]
 
+
 def find_company(url):
     with psycopg.connect(DB_URL) as conn:
         row=conn.execute(
@@ -33,6 +35,7 @@ def find_company(url):
             (url,),
         ).fetchone()
     return row[0] if row else None
+
 
 print("Worker started, waiting for jobs")
 while True:
@@ -54,6 +57,7 @@ while True:
         result=enrich(url)
         if result.get("error"):
             r.hset(key, mapping={"status": "failed", "error": result["error"]})
+            print(f"Failed {job_id}: {result['error']}")
             continue
         company_id=save(url, result)
         r.hset(key, mapping={"status": "done", "company_id": company_id})

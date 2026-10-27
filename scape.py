@@ -38,6 +38,9 @@ def get_about_text(about_url):
         response=httpx.get(about_url, headers=headers, follow_redirects=True, timeout=10)
     except httpx.HTTPError:
         return None
+    
+    if response.is_error:
+        return None
 
     soup=BeautifulSoup(response.text, "html.parser")
     paragraphs=[p.get_text(" ", strip=True) for p in soup.find_all("p")]
@@ -55,6 +58,9 @@ def get_description(url):
     except httpx.HTTPError:
         return {"name": name, "title": None, "description": None, "about_url": None, "about": None, "error": "Could not reach site"}
 
+    if response.is_error:
+        return {"name": name, "title": None, "description": None, "about_url": None, "about": None, "error": f"Site returned {response.status_code}"}
+   
     soup=BeautifulSoup(response.text, "html.parser")
 
     title_tag=soup.find("title")

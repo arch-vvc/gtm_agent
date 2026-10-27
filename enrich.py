@@ -89,7 +89,7 @@ def result(name, company=None, model=None, error=None):
 def enrich(url):
     print(f"Scraping {url}")
     site=get_description(url)
-    print("Scrape done, asking LLM")
+    print("Scrape done")
     name=site["name"]
 
     if site["error"]:
@@ -106,6 +106,7 @@ About page: {site["about"] or "Not available"}
 Fill in the fields using only this information.
 Be specific: name the actual product or service and the actual type of customer."""
 
+    print("Asking LLM")
     company, model=ask(prompt)
     if company is None:
         return result(name, error="All models are currently busy, please retry in a minute.")
