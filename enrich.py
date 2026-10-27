@@ -13,7 +13,7 @@ COOLDOWN_SECONDS=120
 
 gemini_client=genai.Client(http_options=types.HttpOptions(timeout=30000))
 groq_client=Groq(timeout=30)
-GEMINI_MODELS=["gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite"]
+GEMINI_MODELS=["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3.8-flash"]
 GROQ_MODEL="openai/gpt-oss-20b"
 
 
@@ -40,8 +40,11 @@ def ask_gemini(prompt):
             )
             print(f"{model} answered")
             return response.parsed, model
-        except (errors.ServerError, httpx.TimeoutException):
-            print(f"{model} is busy, cooling down for {COOLDOWN_SECONDS}s")
+        except errors.ServerError:
+            print(f"{model} returned a server error, cooling down for {COOLDOWN_SECONDS}s")
+            r.set(f"cooldown:{model}", 1, ex=COOLDOWN_SECONDS)
+        except httpx.TimeoutException:
+            print(f"{model} timed out, cooling down for {COOLDOWN_SECONDS}s")
             r.set(f"cooldown:{model}", 1, ex=COOLDOWN_SECONDS)
     return None, None
 
