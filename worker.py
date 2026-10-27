@@ -24,6 +24,14 @@ def save(url, result):
         ).fetchone()
     return row[0]
 
+def find_company(url):
+    with psycopg.connect(DB_URL) as conn:
+        row=conn.execute(
+            "SELECT id FROM companies WHERE url=%s",
+            (url,),
+        ).fetchone()
+    return row[0] if row else None
+
 print("Worker started, waiting for jobs")
 while True:
     popped=r.brpop("jobs", timeout=5)
@@ -36,6 +44,11 @@ while True:
 
     r.hset(key, "status", "running")
     try:
+        existing_id=find_company(url)
+        if existing_id:
+            r.hset(key, mapping={"status": "done", "company_id": existing_id})
+            print(f"Skipped {job_id}, {url} already saved as company {existing_id}")
+            continue
         result=enrich(url)
         if result.get("error"):
             r.hset(key, mapping={"status": "failed", "error": result["error"]})

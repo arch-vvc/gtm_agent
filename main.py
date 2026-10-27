@@ -39,6 +39,8 @@ def get_job(job_id: str):
     job=r.hgetall(f"job:{job_id}")
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    if "company_id" in job:
+        job["company_id"]=int(job["company_id"])
     return job
 
 
