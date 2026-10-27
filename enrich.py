@@ -4,6 +4,10 @@ from groq import Groq
 import groq
 from pydantic import BaseModel
 from scape import get_description
+import redis
+
+r=redis.Redis(host="redis", decode_responses=True, socket_timeout=30)
+COOLDOWN_SECONDS=120
 
 gemini_client=genai.Client()
 groq_client=Groq()
@@ -20,6 +24,9 @@ class Company(BaseModel):
 
 def ask_gemini(prompt):
     for model in GEMINI_MODELS:
+        if r.exists(f"cooldown:{model}"):
+            print(f"{model} is cooling down, skipping")
+            continue
         try:
             response=gemini_client.models.generate_content(
                 model=model,
@@ -31,7 +38,8 @@ def ask_gemini(prompt):
             )
             return response.parsed, model
         except errors.ServerError:
-            print(f"{model} is busy, trying the next one")
+            print(f"{model} is busy, cooling down for {COOLDOWN_SECONDS}s")
+            r.set(f"cooldown:{model}", 1, ex=COOLDOWN_SECONDS)
     return None, None
 
 
