@@ -6,6 +6,14 @@ import os
 
 DB_URL=os.environ["DB_URL"]
 r=redis.Redis(host="redis", decode_responses=True, socket_timeout=30)
+JOB_TTL=24*60*60
+
+
+def finish(key, fields):
+    pipe=r.pipeline()
+    pipe.hset(key, mapping=fields)
+    pipe.expire(key, JOB_TTL)
+    pipe.execute()
 
 
 def save(url, result):
@@ -37,6 +45,11 @@ def find_company(url):
     return row[0] if row else None
 
 
+for stuck_key in r.scan_iter(match="job:*"):
+    if r.hget(stuck_key, "status") == "running":
+        finish(stuck_key, {"status": "failed", "error": "Worker restarted mid job, please retry"})
+        print(f"Marked {stuck_key} as failed, it was left running")
+
 print("Worker started, waiting for jobs")
 while True:
     popped=r.brpop("jobs", timeout=5)
@@ -51,17 +64,17 @@ while True:
     try:
         existing_id=find_company(url)
         if existing_id:
-            r.hset(key, mapping={"status": "done", "company_id": existing_id})
+            finish(key, {"status": "done", "company_id": existing_id})
             print(f"Skipped {job_id}, {url} already saved as company {existing_id}")
             continue
         result=enrich(url)
         if result.get("error"):
-            r.hset(key, mapping={"status": "failed", "error": result["error"]})
+            finish(key, {"status": "failed", "error": result["error"]})
             print(f"Failed {job_id}: {result['error']}")
             continue
         company_id=save(url, result)
-        r.hset(key, mapping={"status": "done", "company_id": company_id})
+        finish(key, {"status": "done", "company_id": company_id})
         print(f"Finished {job_id}, saved as company {company_id}")
     except Exception as e:
-        r.hset(key, mapping={"status": "failed", "error": str(e)})
+        finish(key, {"status": "failed", "error": str(e)})
         traceback.print_exc()

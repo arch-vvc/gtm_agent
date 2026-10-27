@@ -66,7 +66,7 @@ def ask_groq(prompt):
         )
         print("Groq answered")
         return Company.model_validate_json(response.choices[0].message.content), GROQ_MODEL
-    except (groq.InternalServerError, groq.RateLimitError):
+    except (groq.InternalServerError, groq.RateLimitError, groq.APIConnectionError):
         print("Groq is busy too")
         return None, None
 
