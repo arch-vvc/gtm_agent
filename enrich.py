@@ -8,7 +8,7 @@ from scape import get_description
 gemini_client=genai.Client()
 groq_client=Groq()
 
-GEMINI_MODELS=["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash"]
+GEMINI_MODELS=["gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite"]
 GROQ_MODEL="openai/gpt-oss-20b"
 
 

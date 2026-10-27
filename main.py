@@ -2,13 +2,15 @@ from fastapi import FastAPI
 from fastapi import HTTPException
 from pydantic import BaseModel
 from psycopg.rows import dict_row
-from enrich import enrich
 from scape import normalise_url
 import psycopg
+import redis
+import uuid
 import os
 
 app=FastAPI()
 DB_URL=os.environ["DB_URL"]
+r=redis.Redis(host="redis", decode_responses=True)
 
 
 class EnrichRequest(BaseModel):
@@ -26,22 +28,18 @@ def enrich_company(req: EnrichRequest):
     if existing:
         return {"status": "already in the table", **existing}
 
-    result=enrich(url)
-    company=result["company"]
-    with psycopg.connect(DB_URL) as conn:
-        row=conn.execute(
-            "INSERT INTO companies (url, name, industry, what_they_sell, target_customer, model, error) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
-            (
-                url,
-                result["name"],
-                company.industry if company else None,
-                company.what_they_sell if company else None,
-                company.target_customer if company else None,
-                result["model"],
-                result["error"],
-            ),
-        ).fetchone()
-    return {"status": "created", "id": row[0], **result}
+    job_id=str(uuid.uuid4())
+    r.hset(f"job:{job_id}", mapping={"status": "queued", "url": url})
+    r.lpush("jobs", job_id)
+    return {"status": "queued", "job_id": job_id}
+
+
+@app.get("/jobs/{job_id}")
+def get_job(job_id: str):
+    job=r.hgetall(f"job:{job_id}")
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
 
 
 @app.get("/companies")

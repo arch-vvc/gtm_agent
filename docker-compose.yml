@@ -9,12 +9,22 @@ services:
     volumes:
       - gtm_pgdata:/var/lib/postgresql
 
+  redis:
+    image: redis:7
+
   app:
     build: .
     env_file:
       - .env
     ports:
       - "8000:8000"
+
+  worker:
+    build: .
+    env_file:
+      - .env
+    command: ["/app/.venv/bin/python", "worker.py"]
+    restart: unless-stopped
 
 volumes:
   gtm_pgdata:
