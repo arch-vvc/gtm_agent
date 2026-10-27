@@ -23,10 +23,26 @@ def normalise_url(url):
 def find_about_url(soup, base_url):
     for link in soup.find_all("a", href=True):
         href=link["href"].lower()
+        if href.startswith("#"):
+            continue
         text=link.get_text().lower()
         if "about" in href or "about" in text:
             return urljoin(base_url, link["href"])
     return None
+
+
+def get_about_text(about_url):
+    if about_url is None:
+        return None
+    try:
+        response=httpx.get(about_url, headers=headers, follow_redirects=True, timeout=10)
+    except httpx.HTTPError:
+        return None
+
+    soup=BeautifulSoup(response.text, "html.parser")
+    paragraphs=[p.get_text(" ", strip=True) for p in soup.find_all("p")]
+    text=" ".join(p for p in paragraphs if len(p)>40)
+    return text[:2000] or None
 
 
 def get_description(url):
@@ -37,7 +53,7 @@ def get_description(url):
     try:
         response=httpx.get(url, headers=headers, follow_redirects=True, timeout=10)
     except httpx.HTTPError:
-        return {"name": name, "title": None, "description": None, "about_url": None, "error": "Could not reach site"}
+        return {"name": name, "title": None, "description": None, "about_url": None, "about": None, "error": "Could not reach site"}
 
     soup=BeautifulSoup(response.text, "html.parser")
 
@@ -47,12 +63,13 @@ def get_description(url):
     else:
         title=title_tag.text.strip()
 
-    about_url=find_about_url(soup, str(response.url))
-
     tag=soup.find("meta", attrs={"name": re.compile("^description$", re.IGNORECASE)}) or soup.find("meta", attrs={"property": "og:description"})
     description=tag.get("content") if tag else None
 
-    return {"name": name, "title": title, "description": description, "about_url": about_url, "error": None}
+    about_url=find_about_url(soup, str(response.url))
+    about=get_about_text(about_url)
+
+    return {"name": name, "title": title, "description": description, "about_url": about_url, "about": about, "error": None}
 
 
 if __name__ == "__main__":

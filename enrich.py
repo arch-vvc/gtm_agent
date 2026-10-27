@@ -21,14 +21,16 @@ def enrich(url):
     if site["error"]:
         return {"name": name, "company": None, "error": site["error"]}
 
-    if site["description"] is None:
+    if site["description"] is None and site["about"] is None:
         return {"name": name, "company": None, "error": "No description could be found"}
 
     prompt=f"""Here is information from a company's website.
 Title: {site["title"]}
-Description: {site["description"]}
+Description: {site["description"] or "Not available"}
+About page: {site["about"] or "Not available"}
 
-Fill in the fields using only this information."""
+Fill in the fields using only this information.
+Be specific: name the actual product or service and the actual type of customer."""
 
     for model in MODELS:
         try:
@@ -48,7 +50,7 @@ Fill in the fields using only this information."""
 
 
 if __name__ == "__main__":
-    result=enrich("https://winstream.tech")
+    result=enrich("stripe.com")
 
     if result["error"]:
         print(result["error"])
