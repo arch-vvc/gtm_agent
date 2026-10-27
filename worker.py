@@ -11,7 +11,7 @@ def save(url, result):
     company=result["company"]
     with psycopg.connect(DB_URL) as conn:
         row=conn.execute(
-            "INSERT INTO companies (url, name, industry, what_they_sell, target_customer, model, error) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            "INSERT INTO companies (url, name, industry, what_they_sell, target_customer, model, error) VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (url) DO NOTHING RETURNING id",
             (
                 url,
                 result["name"],
@@ -22,6 +22,8 @@ def save(url, result):
                 result["error"],
             ),
         ).fetchone()
+    if row is None:
+        return find_company(url)
     return row[0]
 
 def find_company(url):
