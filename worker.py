@@ -37,6 +37,9 @@ while True:
     r.hset(key, "status", "running")
     try:
         result=enrich(url)
+        if result.get("error"):
+            r.hset(key, mapping={"status": "failed", "error": result["error"]})
+            continue
         company_id=save(url, result)
         r.hset(key, mapping={"status": "done", "company_id": company_id})
         print(f"Finished {job_id}, saved as company {company_id}")

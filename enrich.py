@@ -1,4 +1,6 @@
 from google import genai
+from google.genai import types
+import httpx
 from google.genai import errors
 from groq import Groq
 import groq
@@ -9,9 +11,8 @@ import redis
 r=redis.Redis(host="redis", decode_responses=True, socket_timeout=30)
 COOLDOWN_SECONDS=120
 
-gemini_client=genai.Client()
-groq_client=Groq()
-
+gemini_client=genai.Client(http_options=types.HttpOptions(timeout=30000))
+groq_client=Groq(timeout=30)
 GEMINI_MODELS=["gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite"]
 GROQ_MODEL="openai/gpt-oss-20b"
 
@@ -27,6 +28,7 @@ def ask_gemini(prompt):
         if r.exists(f"cooldown:{model}"):
             print(f"{model} is cooling down, skipping")
             continue
+        print(f"Trying {model}")
         try:
             response=gemini_client.models.generate_content(
                 model=model,
@@ -36,14 +38,16 @@ def ask_gemini(prompt):
                     "response_schema": Company,
                 },
             )
+            print(f"{model} answered")
             return response.parsed, model
-        except errors.ServerError:
+        except (errors.ServerError, httpx.TimeoutException):
             print(f"{model} is busy, cooling down for {COOLDOWN_SECONDS}s")
             r.set(f"cooldown:{model}", 1, ex=COOLDOWN_SECONDS)
     return None, None
 
 
 def ask_groq(prompt):
+    print("Trying Groq")
     try:
         response=groq_client.chat.completions.create(
             model=GROQ_MODEL,
@@ -53,9 +57,11 @@ def ask_groq(prompt):
                 "json_schema": {
                     "name": "company",
                     "strict": True,
-                    "schema": {**Company.model_json_schema(), "additionalProperties": False},                },
+                    "schema": {**Company.model_json_schema(), "additionalProperties": False},
+                },
             },
         )
+        print("Groq answered")
         return Company.model_validate_json(response.choices[0].message.content), GROQ_MODEL
     except (groq.InternalServerError, groq.RateLimitError):
         print("Groq is busy too")
@@ -78,7 +84,9 @@ def result(name, company=None, model=None, error=None):
 
 
 def enrich(url):
+    print(f"Scraping {url}")
     site=get_description(url)
+    print("Scrape done, asking LLM")
     name=site["name"]
 
     if site["error"]:
