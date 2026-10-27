@@ -2,16 +2,18 @@ from fastapi import FastAPI
 from fastapi import HTTPException
 from pydantic import BaseModel
 from psycopg.rows import dict_row
-from scape import normalise_url
 from enrich import enrich
+from scape import normalise_url
 import psycopg
 import os
 
 app=FastAPI()
 DB_URL=os.environ["DB_URL"]
 
+
 class EnrichRequest(BaseModel):
     url: str
+
 
 @app.post("/enrich")
 def enrich_company(req: EnrichRequest):
@@ -28,17 +30,19 @@ def enrich_company(req: EnrichRequest):
     company=result["company"]
     with psycopg.connect(DB_URL) as conn:
         row=conn.execute(
-            "INSERT INTO companies (url, name, industry, what_they_sell, target_customer, error) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+            "INSERT INTO companies (url, name, industry, what_they_sell, target_customer, model, error) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
             (
                 url,
                 result["name"],
                 company.industry if company else None,
                 company.what_they_sell if company else None,
                 company.target_customer if company else None,
+                result["model"],
                 result["error"],
             ),
         ).fetchone()
     return {"status": "created", "id": row[0], **result}
+
 
 @app.get("/companies")
 def get_all_companies():
