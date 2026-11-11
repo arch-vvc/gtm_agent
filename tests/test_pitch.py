@@ -226,16 +226,33 @@ def test_allowlist_matching_is_case_insensitive():
 
 NEW_ALLOWED_WORDS = [
     "First", "Firstly", "Second", "Secondly", "Third", "Thirdly", "Finally", "Lastly",
-    "Next", "Then", "Also", "Additionally", "Moreover", "However", "Therefore",
-    "Overall", "Together", "Today", "Because", "Since", "Although", "While", "When",
+    "Then", "Also", "Additionally", "Moreover", "However", "Therefore",
+    "Overall", "Because", "Since", "Although", "While", "When",
     "If", "And", "But", "So", "Or", "With", "Without", "For", "From", "In",
     "On", "At", "By", "To", "Of", "As", "A", "An", "That", "These", "Those", "Some",
-    "Many", "Each", "Every", "Two", "Three", "Here", "There", "They",
+    "Many", "Each", "Every", "Here", "There", "They",
     "He", "She", "Please", "Hello",
 ]  # fmt: skip
 
-# Words that can be real product or customer names (Best Buy, Kind Snacks, Dear Health).
-NAME_LIKE_WORDS = ["Best", "Kind", "Dear", "Regards", "Most", "One", "Yet"]
+# Words that can be real product or customer names (Best Buy, Kind Snacks, Dear Health,
+# Together AI, Two Sigma, Three the telecom).
+NAME_LIKE_WORDS = ["Best", "Kind", "Dear", "Regards", "Most", "One", "Yet",
+                   "Together", "Today", "Next", "Two", "Three"]  # fmt: skip
+
+
+def test_together_ai_is_flagged_when_not_in_corpus():
+    names = pitch.ungrounded_names("Together AI ships agents for your stack.", "Goodco invoices")
+    assert "Together" in names
+
+
+def test_together_ai_is_accepted_when_in_corpus():
+    assert pitch.ungrounded_names("Together AI ships agents for your stack.", "Together AI is a customer") == []
+
+
+@pytest.mark.parametrize("word", ["Next", "Today", "Two", "Three"])
+def test_removed_words_at_sentence_start_are_flagged_without_corpus(word):
+    names = pitch.ungrounded_names(f"{word} teams use Goodco.", "Goodco invoices")
+    assert names == [word]
 
 
 @pytest.mark.parametrize("word", NEW_ALLOWED_WORDS)
