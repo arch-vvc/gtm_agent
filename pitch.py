@@ -5,7 +5,7 @@ the grounding guard and the markdown rendering. No network, no API clients.
 import re
 from urllib.parse import urlparse
 
-CLUSTERS = ("A", "B", "C", "D", "E", "F")
+CLUSTERS = ("A", "B", "C", "D", "E", "F", "G")
 
 CLUSTER_LABELS = {
     "A": "voice and conversational agents",
@@ -14,6 +14,7 @@ CLUSTER_LABELS = {
     "D": "supply chain and physical ops (planned demo: capstone spin off, not built yet)",
     "E": "AI infra and dev tools (planned demo: migration validator, not built yet)",
     "F": "vertical SaaS (no default demo)",
+    "G": "computer use and desktop agents (no demo built yet)",
 }
 
 # The demo comes from this table, never from the model.
@@ -24,6 +25,7 @@ CLUSTER_DEMOS = {
     "D": "none built",
     "E": "none built",
     "F": "none built",
+    "G": "none built",
 }
 
 LOOM = "[LOOM_URL]"

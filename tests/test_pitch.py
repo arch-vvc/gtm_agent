@@ -24,12 +24,12 @@ def note_with_last_line(last_line):
 
 
 def test_cluster_demos_cover_every_cluster():
-    assert pitch.CLUSTERS == ("A", "B", "C", "D", "E", "F")
+    assert pitch.CLUSTERS == ("A", "B", "C", "D", "E", "F", "G")
     assert set(pitch.CLUSTER_DEMOS) == set(pitch.CLUSTERS)
     assert set(pitch.CLUSTER_LABELS) == set(pitch.CLUSTERS)
     assert pitch.CLUSTER_DEMOS["A"] == "voice-agent-call-qa"
     assert pitch.CLUSTER_DEMOS["B"] == "invoice-exception-triage"
-    for cluster in "CDEF":
+    for cluster in "CDEFG":
         assert pitch.CLUSTER_DEMOS[cluster] == "none built"
     assert pitch.LOOM == "[LOOM_URL]"
     assert pitch.REPO == "[REPO_URL]"
@@ -43,6 +43,7 @@ def test_cluster_labels_match_the_spec_exactly():
         "D": "supply chain and physical ops (planned demo: capstone spin off, not built yet)",
         "E": "AI infra and dev tools (planned demo: migration validator, not built yet)",
         "F": "vertical SaaS (no default demo)",
+        "G": "computer use and desktop agents (no demo built yet)",
     }
 
 

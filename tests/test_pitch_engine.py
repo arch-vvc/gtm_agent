@@ -134,6 +134,79 @@ def test_cluster_without_a_built_demo_says_none_built(monkeypatch):
     assert enrich.enrich("ledgerly.example")["demo"] == "none built"
 
 
+# SYNTHETIC. The company is fictional. It imitates the shape of scrape.get_description output
+# for a computer use agent company (a synthetic Simular style example).
+DESKTOP_SITE = {
+    "name": "Deskhand",
+    "url": "https://deskhand.example",
+    "title": "Deskhand | Agents that use your computer",
+    "description": (
+        "Deskhand operates your desktop apps like a person would, automating claims, "
+        "data migration and back office tasks."
+    ),
+    "about_url": "https://deskhand.example/about",
+    "about": (
+        "Deskhand builds agents that click, type and read the screen across the legacy software "
+        "that teams already run, so no one has to rebuild old workflows as integrations."
+    ),
+    "error": None,
+    "careers_url": "https://deskhand.example/careers",
+    "hiring_fde": False,
+    "fde_roles": [],
+}
+
+DESKTOP_NOTE = """Deskhand looks like a fit for an agent test demo, though none is built yet for desktop agents.
+
+The site says it operates your desktop apps like a person would, so every customer workflow is its own deployment.
+Claims and data migration are the tasks it names, and each needs proof that the agent clicks the right thing.
+I can show how that proof would look for one workflow.
+
+Loom: [LOOM_URL] Repo: [REPO_URL]"""
+
+
+def test_cluster_g_maps_to_none_built_through_enrich(monkeypatch):
+    use_site(monkeypatch, DESKTOP_SITE)
+    script_ask(monkeypatch, [(make_company("G", DESKTOP_NOTE), "fake-model")])
+
+    out = enrich.enrich("deskhand.example")
+
+    assert out["error"] is None
+    assert out["company"].cluster == "G"
+    assert out["demo"] == "none built"
+    assert out["pitch_note"] == DESKTOP_NOTE
+    assert out["pitch_error"] is None
+
+
+def test_pitch_markdown_for_a_cluster_g_company_shows_none_built(monkeypatch):
+    use_site(monkeypatch, DESKTOP_SITE)
+    script_ask(monkeypatch, [(make_company("G", DESKTOP_NOTE), "fake-model")])
+    out = enrich.enrich("deskhand.example")
+    row = {
+        "name": out["name"],
+        "cluster": out["company"].cluster,
+        "demo": out["demo"],
+        "hiring_fde": out["hiring_fde"],
+        "pitch_note": out["pitch_note"],
+        "tailoring": out["company"].tailoring,
+    }
+
+    markdown = pitch.render_pitch_markdown(row)
+
+    assert "Cluster: G" in markdown
+    assert "Demo: none built" in markdown
+    assert DESKTOP_NOTE in markdown
+
+
+def test_prompt_lists_cluster_g_with_its_label_and_the_classification_hint():
+    prompt = prompt_for(DESKTOP_SITE)
+
+    assert "G: computer use and desktop agents (no demo built yet)" in prompt
+    assert "Choose G for products that operate a computer, browser or desktop application on a person's behalf" in prompt
+    # Only the built demos are described, so G has no demo line.
+    assert "G: computer use" in prompt.split("These are the demos that exist:")[0]
+    assert "computer use" not in prompt.split("These are the demos that exist:")[1]
+
+
 def test_prompt_contains_scraped_text_clusters_and_hiring_signal(monkeypatch):
     use_site(monkeypatch, VOICE_SITE)
     prompts = script_ask(monkeypatch, [(make_company("A", VOICE_NOTE), "fake-model")])
@@ -383,7 +456,11 @@ def test_company_requires_exactly_three_tailoring_items():
 
 def test_company_rejects_an_unknown_cluster():
     with pytest.raises(ValueError):
-        make_company("G", AP_NOTE)
+        make_company("H", AP_NOTE)
+
+
+def test_company_accepts_cluster_g():
+    assert make_company("G", AP_NOTE).cluster == "G"
 
 
 def walk_objects(schema):
@@ -430,7 +507,7 @@ def test_strict_schema_marks_defaulted_and_nested_properties_required():
 def test_strict_schema_cluster_is_enum_and_tailoring_is_string_array():
     properties = enrich.strict_schema(Company)["properties"]
 
-    assert properties["cluster"]["enum"] == ["A", "B", "C", "D", "E", "F"]
+    assert properties["cluster"]["enum"] == ["A", "B", "C", "D", "E", "F", "G"]
     assert properties["tailoring"]["type"] == "array"
     assert properties["tailoring"]["items"] == {"type": "string"}
 
@@ -453,7 +530,7 @@ def test_gemini_client_accepts_company_schema_offline():
 
     schema = _transformers.t_schema(enrich.gemini_client._api_client, Company)
 
-    assert schema.properties["cluster"].enum == ["A", "B", "C", "D", "E", "F"]
+    assert schema.properties["cluster"].enum == ["A", "B", "C", "D", "E", "F", "G"]
     assert schema.properties["tailoring"].min_items == 3
     assert schema.properties["tailoring"].max_items == 3
 
