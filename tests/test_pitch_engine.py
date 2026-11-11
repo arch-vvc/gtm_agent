@@ -130,7 +130,7 @@ def test_voice_site_maps_cluster_a_to_voice_agent_call_qa(monkeypatch):
 
 def test_cluster_without_a_built_demo_says_none_built(monkeypatch):
     use_site(monkeypatch, AP_SITE)
-    script_ask(monkeypatch, [(make_company("E", AP_NOTE), "fake-model")])
+    script_ask(monkeypatch, [(make_company("E", AP_NOTE.replace("I built it", "I would build it")), "fake-model")])
 
     assert enrich.enrich("ledgerly.example")["demo"] == "none built"
 
@@ -724,7 +724,7 @@ def test_prompt_pitch_instructions_stay_compact():
     pitch_part = prompt[prompt.index("pitch_note:") :]
 
     # Measured at 608 words after the no deadlines rule; 620 leaves a small margin and still keeps the section short.
-    assert len(pitch_part.split()) < 620
+    assert len(pitch_part.split()) < 640
 
 
 def test_prompt_still_has_the_fence_unknown_and_cluster_g_rules():
@@ -925,3 +925,61 @@ def test_build_corpus_tolerates_odd_demo_facts_values(value):
 
     assert "Echobench" in corpus
     assert "a list" not in corpus
+
+
+def test_prompt_says_past_tense_is_only_for_i_built():
+    prompt = enrich.build_prompt(AP_SITE)
+
+    assert 'Past tense is allowed only for "I built"' in prompt
+    assert '"I would adapt ..."' in prompt
+
+
+def test_prompt_pitch_section_word_cap_is_still_set_and_not_loose():
+    prompt = enrich.build_prompt(AP_SITE)
+    pitch_part = prompt[prompt.index("pitch_note:") :]
+
+    assert len(pitch_part.split()) < 640
+    assert len(pitch_part.split()) > 600
+
+
+def test_claims_violations_reach_the_retry_prompt_through_enrich(monkeypatch):
+    use_site(monkeypatch, AP_SITE)
+    claimed = AP_NOTE.replace("I built it to show", "First I adapted the matching engine to show")
+    prompts = script_ask(monkeypatch, [(make_company("B", claimed), "first"), (make_company("B", AP_NOTE), "second")])
+
+    out = enrich.enrich("ledgerly.example")
+
+    assert len(prompts) == 2
+    assert "note claims work on this company that was not done: 'I adapted' (write 'I would adapt')" in prompts[1]
+    assert out["pitch_error"] is None
+    assert out["model"] == "second"
+
+
+def test_built_claim_for_a_cluster_without_a_demo_is_rejected_and_retried(monkeypatch):
+    use_site(monkeypatch, AP_SITE)
+    future = AP_NOTE.replace("I built it", "I would build it")
+    prompts = script_ask(monkeypatch, [(make_company("G", AP_NOTE), "first"), (make_company("G", future), "second")])
+
+    out = enrich.enrich("ledgerly.example")
+
+    assert len(prompts) == 2
+    assert "claims a built demo for a cluster with no demo built" in prompts[1]
+    assert out["pitch_note"] == future
+
+
+def test_guard_flags_i_built_for_cluster_g_and_not_i_would_build():
+    built = make_company("G", AP_NOTE)
+    future = make_company("G", AP_NOTE.replace("I built it", "I would build it"))
+
+    assert "claims a built demo for a cluster with no demo built" in enrich.guard_violations(built, AP_SITE)
+    assert enrich.guard_violations(future, AP_SITE) == []
+
+
+def test_guard_flags_have_built_and_ive_built_for_cluster_c():
+    for phrase in ("I have built it", "I've built it", "I" + chr(0x2019) + "ve built it"):
+        company = make_company("C", AP_NOTE.replace("I built it", phrase))
+        assert "claims a built demo for a cluster with no demo built" in enrich.guard_violations(company, AP_SITE), phrase
+
+
+def test_guard_allows_i_built_for_cluster_b():
+    assert enrich.guard_violations(make_company("B", AP_NOTE), AP_SITE) == []

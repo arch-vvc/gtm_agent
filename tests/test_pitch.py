@@ -567,3 +567,69 @@ def test_windows_line_endings():
     assert pitch.candidate_names(note) == ["Repo"]
     assert pitch.pitch_violations(note, SITE) == []
     assert pitch.candidate_names("1. Voice teams ship.\r\n2. Simulated callers help.\r\n") == []
+
+
+CLAIM_SENTENCES = [
+    "First I adapted the simulation engine to focus on instruction following and tool call precision",
+    "Second I integrated adversarial callers into the test suite",
+    "I adapted the voice agent call QA script to use clinical triage scenarios",
+    "I configured the adversarial caller personas",
+    "I aligned the dashboard evaluation logic",
+    "First, I configured the personas",
+    "I have adapted the scenarios",
+    "I've tailored the demo",
+    "I set up the dashboard",
+    "I wrote new scenarios",
+]
+
+
+def test_claims_flag_the_sentences_from_the_live_run():
+    for sentence in CLAIM_SENTENCES:
+        assert pitch.check_pitch_claims(sentence), sentence
+
+
+def test_claims_violation_text_names_the_phrase_and_the_future_tense():
+    assert pitch.check_pitch_claims("First I adapted the engine.") == [
+        "note claims work on this company that was not done: 'I adapted' (write 'I would adapt')"
+    ]
+    assert "(write 'I would write')" in pitch.check_pitch_claims("I wrote tests.")[0]
+    assert "'I have adapted'" in pitch.check_pitch_claims("I have adapted it.")[0]
+
+
+def test_claims_cover_every_listed_verb():
+    verbs = list(pitch.CLAIM_VERBS)
+    assert len(verbs) == 24
+    for verb in verbs:
+        assert pitch.check_pitch_claims(f"I {verb} the demo"), verb
+
+
+def test_claims_allow_built_future_and_can():
+    for sentence in (
+        "I built a voice agent call QA tool that runs about 20 simulated callers.",
+        "I would adapt the scenarios.",
+        "I can tailor this to your customers.",
+        "Adapted from the original script, the demo shows failing turns.",
+        "They adapted the engine and the team integrated it.",
+    ):
+        assert pitch.check_pitch_claims(sentence) == [], sentence
+
+
+def test_claims_report_each_distinct_phrase_once():
+    found = pitch.check_pitch_claims("I adapted it. Later I adapted it again. I configured it.")
+
+    assert len(found) == 2
+
+
+def test_pitch_violations_include_the_claims():
+    note = "First I adapted the engine.\n\nLoom: [LOOM_URL] Repo: [REPO_URL]"
+
+    violations = pitch.pitch_violations(note, {"name": "X"})
+
+    assert any("'I adapted'" in violation for violation in violations)
+
+
+def test_claims_built_demo_matches_the_three_forms():
+    assert pitch.claims_built_demo("I built it")
+    assert pitch.claims_built_demo("I have built it")
+    assert pitch.claims_built_demo("I've built it")
+    assert not pitch.claims_built_demo("I would build it")

@@ -74,6 +74,13 @@ def make_strict(schema):
 
 
 def ask_gemini(prompt):
+    """Try each Gemini model in turn and return (company, model that answered).
+
+    A junk answer (placeholder fields) counts as a failed attempt and the loop
+    moves on without a cooldown. If every answer was junk, the first junk answer
+    is returned so enrich() can name the fields. A non junk answer wins at once.
+    """
+    first_junk=(None, None)
     for model in GEMINI_MODELS:
         if r.exists(f"cooldown:{model}"):
             print(f"{model} is cooling down, skipping")
@@ -88,8 +95,13 @@ def ask_gemini(prompt):
                     "response_schema": Company,
                 },
             )
+            company=response.parsed
+            if company is not None and junk_fields(company):
+                print(f"{model} answered with placeholder fields {junk_fields(company)}, trying the next model")
+                first_junk=first_junk if first_junk[0] else (company, model)
+                continue
             print(f"{model} answered")
-            return response.parsed, model
+            return company, model
         except errors.ServerError as error:
             print(f"{model} returned a server error, cooling down for {COOLDOWN_SECONDS}s")
             # Only the code and the message are logged, never headers or the key, so repeated 5xx can be diagnosed.
@@ -100,7 +112,7 @@ def ask_gemini(prompt):
             r.set(f"cooldown:{model}", 1, ex=COOLDOWN_SECONDS)
         except errors.ClientError as error:
             handle_client_error(model, error)
-    return None, None
+    return first_junk
 
 
 def handle_client_error(model, error):
@@ -146,15 +158,22 @@ def groq_request(model, prompt):
 def ask_groq(prompt):
     """Try each Groq model in turn and return (company, model that answered).
 
-    Any failure that another model might not share moves on to the next model.
-    Only the status and message are logged, never headers or keys. A bad key
+    Any failure that another model might not share moves on to the next model,
+    and so does a junk answer (placeholder fields). If every answer was junk, the
+    first junk answer is returned so enrich() can name the fields. Only the
+    status and message are logged, never headers or keys. A bad key
     (AuthenticationError) is not caught, so it stays loud.
     """
+    first_junk=(None, None)
     for model in GROQ_MODELS:
         print(f"Trying Groq {model}")
         try:
             response=groq_request(model, prompt)
             company=Company.model_validate_json(response.choices[0].message.content)
+            if junk_fields(company):
+                print(f"Groq {model} answered with placeholder fields {junk_fields(company)}, trying the next model")
+                first_junk=first_junk if first_junk[0] else (company, model)
+                continue
             print(f"Groq {model} answered")
             return company, model
         except (groq.BadRequestError, groq.NotFoundError) as error:
@@ -164,18 +183,28 @@ def ask_groq(prompt):
         except (ValidationError, ValueError) as error:
             # Groq answered, but not with JSON that fits the schema (ValueError covers bad JSON).
             print(f"Groq {model} returned an answer that does not fit the schema ({short(error)}), trying the next model")
-    return None, None
+    return first_junk
 
 
 PROVIDERS=[ask_gemini, ask_groq]
 
 
 def ask(prompt):
+    """Return the first non junk answer from the providers, in order.
+
+    If every provider gave only junk, return the first junk answer, so the
+    caller reports the placeholder fields. If nothing answered, return (None, None).
+    """
+    first_junk=(None, None)
     for provider in PROVIDERS:
         company, model=provider(prompt)
-        if company:
-            return company, model
-    return None, None
+        if not company:
+            continue
+        if junk_fields(company):
+            first_junk=first_junk if first_junk[0] else (company, model)
+            continue
+        return company, model
+    return first_junk
 
 
 # Fixed fact sheets for the built demos. The pitch note may describe a demo only with these facts. Edit them here.
@@ -283,7 +312,7 @@ Rules for pitch_note:
 5. No hyphens or dashes of any kind.
 6. No flattery or hype words such as perfectly, excited, love, passionate.
 7. Name only products and customers that appear in the text above. No invented numbers.
-8. Describe a demo ONLY with the facts above. Do not claim integrations, metrics, interfaces, data sources, file formats or features that are not listed. You may say how you WOULD adapt it, in the future tense, using the tailoring changes.
+8. Describe a demo ONLY with the facts above. Do not claim integrations, metrics, interfaces, data sources, file formats or features that are not listed. You may say how you WOULD adapt it, in the future tense, using the tailoring changes. Past tense is allowed only for "I built"; everything about adapting the demo to this company is future tense ("I would adapt ...").
 9. If you choose cluster C, D, E, F or G (the labels that say not built yet, no demo built yet or no default demo), this rule overrides rules 1 to 3 on the demo: do not say or imply that a demo was built, and do not mention or describe the demos from clusters A and B. Write in the future tense naming ONE concrete first deliverable drawn from the tailoring changes and, where the cluster label gives one, the planned demo, and offer to show a first version. Keep the structure.
 10. Include at least one concrete detail taken from the text above, in the conclusion line or the first reason: a named customer, a product feature or a short phrase from the company's own site.
 11. Do not give dates, deadlines or time commitments (no "next week", "by Friday", "within 48 hours"). An offer to show a first version carries no date.
@@ -301,7 +330,10 @@ def guard_violations(company, site):
     A copy of the site dict is used so the original is never changed.
     """
     guard_site={**site, "demo_facts": DEMO_FACTS_BY_CLUSTER.get(company.cluster)}
-    return pitch.pitch_violations(company.pitch_note, guard_site)
+    violations=pitch.pitch_violations(company.pitch_note, guard_site)
+    if company.cluster not in DEMO_FACTS_BY_CLUSTER and pitch.claims_built_demo(company.pitch_note):
+        violations.append("claims a built demo for a cluster with no demo built")
+    return violations
 
 
 def junk_error(company, missing):

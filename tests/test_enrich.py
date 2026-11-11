@@ -207,7 +207,7 @@ def test_enrich_keeps_legitimate_answers_that_start_with_ambiguous_words(monkeyp
     assert out["company"] is company
 
 
-def test_enrich_does_not_try_the_second_provider_when_the_first_gives_a_junk_company(monkeypatch):
+def test_a_junk_answer_from_the_first_provider_falls_through_to_the_second(monkeypatch):
     second_calls = []
     junk = make_company("unknown", "unknown", "unknown")
     monkeypatch.setattr(enrich, "PROVIDERS", [lambda p: (junk, "first"), lambda p: second_calls.append(p) or (COMPANY, "second")])
@@ -215,9 +215,10 @@ def test_enrich_does_not_try_the_second_provider_when_the_first_gives_a_junk_com
 
     out = enrich.enrich("stripe.com")
 
-    assert out["company"] is None
-    assert "industry" in out["error"]
-    assert second_calls == []
+    assert out["company"] == COMPANY
+    assert out["model"] == "second"
+    assert out["error"] is None
+    assert len(second_calls) == 1
 
 
 def test_enrich_treats_junk_variants_as_missing(monkeypatch):
@@ -703,3 +704,99 @@ def test_gemini_server_error_message_is_truncated_to_200_characters(monkeypatch,
     out = capsys.readouterr().out
     assert "y" * 200 in out
     assert "y" * 201 not in out
+
+
+JUNK = make_company("UNKNOWN", "Payment APIs", "Online businesses")
+JUNK_TOO = make_company("Fintech", "Not available", "Online businesses")
+
+
+def groq_json(company):
+    return company.model_dump_json()
+
+
+def test_gemini_junk_on_model_one_then_good_on_model_two(monkeypatch):
+    _, gemini = use_fakes(monkeypatch, {FIRST: JUNK, SECOND: COMPANY, THIRD: COMPANY})
+
+    assert enrich.ask_gemini("prompt") == (COMPANY, SECOND)
+    assert gemini.calls == [FIRST, SECOND]
+
+
+def test_junk_does_not_set_a_cooldown(monkeypatch):
+    fake_redis, _ = use_fakes(monkeypatch, {FIRST: JUNK, SECOND: COMPANY, THIRD: COMPANY})
+
+    enrich.ask_gemini("prompt")
+
+    assert fake_redis.keys == {}
+
+
+def test_junk_log_names_the_fields_only(monkeypatch, capsys):
+    use_fakes(monkeypatch, {FIRST: JUNK, SECOND: COMPANY, THIRD: COMPANY})
+
+    enrich.ask_gemini("prompt")
+
+    out = capsys.readouterr().out
+    assert "placeholder fields ['industry']" in out
+    assert "UNKNOWN" not in out
+
+
+def test_all_gemini_junk_then_groq_small_junk_then_groq_big_good(monkeypatch):
+    use_fakes(monkeypatch, {model: JUNK for model in enrich.GEMINI_MODELS})
+    fake = ScriptedGroq({SMALL: groq_json(JUNK), BIG: groq_json(COMPANY)})
+    monkeypatch.setattr(enrich, "groq_client", fake)
+
+    assert enrich.ask("prompt") == (COMPANY, "openai/gpt-oss-120b")
+    assert [call["model"] for call in fake.calls] == [SMALL, BIG]
+
+
+def test_groq_small_junk_then_big_good(monkeypatch):
+    fake = ScriptedGroq({SMALL: groq_json(JUNK), BIG: groq_json(COMPANY)})
+    monkeypatch.setattr(enrich, "groq_client", fake)
+
+    assert enrich.ask_groq("prompt") == (COMPANY, BIG)
+
+
+def test_every_attempt_junk_gives_the_junk_error_naming_the_fields(monkeypatch):
+    use_fakes(monkeypatch, {model: JUNK for model in enrich.GEMINI_MODELS})
+    fake = ScriptedGroq({SMALL: groq_json(JUNK_TOO), BIG: groq_json(JUNK_TOO)})
+    monkeypatch.setattr(enrich, "groq_client", fake)
+    monkeypatch.setattr(enrich, "get_description", lambda url: SITE)
+
+    company, model = enrich.ask("prompt")
+    out = enrich.enrich("stripe.com")
+
+    assert company == JUNK
+    assert model == FIRST
+    assert out["company"] is None
+    assert "busy" not in out["error"]
+    assert "industry (answered 'UNKNOWN')" in out["error"]
+
+
+def test_all_groq_junk_returns_the_first_junk_answer(monkeypatch):
+    fake = ScriptedGroq({SMALL: groq_json(JUNK), BIG: groq_json(JUNK_TOO)})
+    monkeypatch.setattr(enrich, "groq_client", fake)
+
+    assert enrich.ask_groq("prompt") == (JUNK, SMALL)
+
+
+def test_one_junk_one_503_and_a_good_answer_returns_the_good_one(monkeypatch):
+    server_error = errors.ServerError(503, {"error": {"message": "high demand", "status": "UNAVAILABLE"}})
+    fake_redis, _ = use_fakes(monkeypatch, {FIRST: JUNK, SECOND: server_error, THIRD: COMPANY})
+
+    assert enrich.ask_gemini("prompt") == (COMPANY, THIRD)
+    assert fake_redis.keys == {f"cooldown:{SECOND}": enrich.COOLDOWN_SECONDS}
+
+
+def test_junk_then_every_other_attempt_failing_still_returns_the_junk(monkeypatch):
+    server_error = errors.ServerError(503, {"error": {"message": "high demand", "status": "UNAVAILABLE"}})
+    use_fakes(monkeypatch, {FIRST: JUNK, SECOND: server_error, THIRD: server_error})
+    monkeypatch.setattr(enrich, "groq_client", ScriptedGroq({SMALL: groq_bad_request(), BIG: "not json"}))
+
+    assert enrich.ask("prompt") == (JUNK, FIRST)
+
+
+def test_authentication_error_still_propagates_after_a_junk_answer(monkeypatch):
+    fake = ScriptedGroq({SMALL: groq_json(JUNK), BIG: groq_auth_error()})
+    monkeypatch.setattr(enrich, "groq_client", fake)
+
+    with pytest.raises(groq.AuthenticationError):
+        enrich.ask_groq("prompt")
