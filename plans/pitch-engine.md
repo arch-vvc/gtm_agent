@@ -129,3 +129,4 @@ T1, T2 and T3 can genuinely run in parallel, because their files are disjoint. R
 ## Ledger
 <!-- /ship appends one line per finished task: id, branch, reviewer verdicts, fix rounds used -->
 - T1, task/T1, review 1 CHANGES NEEDED (labels, None, Unicode), review 2 APPROVED, 1 fix round, merged d253758, 60 tests pass.
+- T2, task/T2, review 1 APPROVED, 0 fix rounds, merged 73e124e, 77 tests pass. Nice to have parked: skip mailto/tel/javascript hrefs in find_careers_url, catch httpx.InvalidURL, parametrize one test.
