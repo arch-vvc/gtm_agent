@@ -5,10 +5,11 @@ from pathlib import Path
 
 import psycopg
 import redis
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from psycopg.rows import dict_row
 from pydantic import BaseModel
 
+from pitch import render_pitch_markdown
 from scrape import normalise_url
 
 DB_URL=os.environ["DB_URL"]
@@ -76,3 +77,20 @@ def get_company(company_id: int):
     if row is None:
         raise HTTPException(status_code=404, detail="Company not found")
     return row
+
+
+@app.get("/companies/{company_id}/pitch")
+def get_pitch(company_id: int):
+    with psycopg.connect(DB_URL, row_factory=dict_row) as conn:
+        row=conn.execute("SELECT * FROM companies WHERE id=%s", (company_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Company not found")
+    if not row.get("pitch_note"):
+        if row.get("pitch_error"):
+            reason=row["pitch_error"]
+        elif not row.get("cluster"):
+            reason="it was enriched before the pitch engine existed"
+        else:
+            reason="no note was saved"
+        raise HTTPException(status_code=404, detail=f"No pitch for this company: {reason}")
+    return Response(render_pitch_markdown(row), media_type="text/markdown")

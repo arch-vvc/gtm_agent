@@ -23,7 +23,7 @@ def save(url, result):
     company=result["company"]
     with psycopg.connect(DB_URL) as conn:
         row=conn.execute(
-            "INSERT INTO companies (url, name, industry, what_they_sell, target_customer, model, error) VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (url) DO NOTHING RETURNING id",
+            "INSERT INTO companies (url, name, industry, what_they_sell, target_customer, model, error, cluster, cluster_reason, demo, customer_pain, tailoring, pitch_note, pitch_error, careers_url, hiring_fde) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (url) DO NOTHING RETURNING id",
             (
                 url,
                 result["name"],
@@ -32,6 +32,16 @@ def save(url, result):
                 company.target_customer if company else None,
                 result["model"],
                 result["error"],
+                company.cluster if company else None,
+                company.cluster_reason if company else None,
+                result.get("demo"),
+                company.customer_pain if company else None,
+                list(company.tailoring) if company else None,
+                # From result, not company: the guard sets result["pitch_note"] to None when it rejects a note.
+                result.get("pitch_note"),
+                result.get("pitch_error"),
+                result.get("careers_url"),
+                result.get("hiring_fde"),
             ),
         ).fetchone()
     if row is None:
