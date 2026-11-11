@@ -1,8 +1,67 @@
 # gtm_agent
 
-Give it a company website and it returns the company's industry, what they sell and who they sell to. It also picks a cluster for the company, maps that to one of the demos in the pitch repos, names the deployment pain the company's customers have, suggests three changes to tailor the demo, and drafts a pitch note of 150 words or fewer. A guard checks that the note names nothing that is not on the company's own site.
+gtm_agent is a pitch engine for forward deployed engineer (FDE) outreach. You give it a startup's URL. It returns the cluster the company belongs to (A to G), the demo to send, the deployment pain the company's customers likely have, three changes to tailor the demo, and a pitch note of 150 words or fewer. A guard checks that the product and company names in the note appear on the company's own site, but it does not check facts (see [Limits](#limits)). It also reports whether the company's careers page lists a forward deployed or solutions engineer role. It is built for the author's own outreach to startups. It runs on FastAPI, a Redis queue, Postgres, and Gemini with a Groq fallback.
 
-## Run it in 5 minutes
+## Status
+
+- **Verified:** the test suite (471 tests, all model calls mocked), the migration check against Postgres 16, and an end to end run against real Postgres and Redis with a faked scraper and a faked model.
+- **Not verified:** no run against live Gemini or Groq has been recorded in this repo yet. The first live results go in the placeholder below.
+- **Earlier live runs** on the author's machine exposed three problems: a company saved with every field `Not available`, a customer described as a device user group, and the same company saved twice under two domains. They are fixed and tested here, but these fixes have not been re-run live yet.
+
+## Results
+
+> PLACEHOLDER (replace before sending to anyone): the real results go here. Run the commands in "Reproduce the results" below, commit the output as `results/real_results.csv`, then replace the skeleton table with a few rows from that file. Failures are shown, not hidden: keep rows where a note was rejected or the model answered badly. Nothing in this section is a real result yet.
+
+| company | cluster | demo | hiring FDE | cluster_reason (quoted from the site) | first line of the note | what went wrong |
+|---|---|---|---|---|---|---|
+| PLACEHOLDER | | | | | | |
+
+When you read the CSV, look for a wrong cluster (compare `cluster_reason` with what the company really does), rows where `pitch_note` is empty and `pitch_error` says the guard rejected it, and junk answers in `customer_pain` or `tailoring`.
+
+## Reproduce the results
+
+You need Docker, a Gemini API key and a Groq API key (both have free tiers). Copy the example env file and put your two keys in it:
+
+```bash
+cp .env.example .env
+```
+
+Open `.env` and replace the two placeholder keys. This run makes real API calls and uses a small amount of your quota.
+
+### Option A: Docker only (recommended)
+
+```bash
+docker compose up -d --build
+mkdir -p results
+docker compose run --rm -v "$PWD/results:/app/results" worker /app/.venv/bin/python -m scripts.real_run --csv results/real_results.csv peakflo.co cekura.ai simular.ai
+```
+
+The folder mount is needed because the container is removed after the run (`--rm`), so a CSV written inside it would be lost. Run it inside the worker container because that container has your keys and a Redis for the Gemini cooldowns. On Linux the CSV may be owned by root, because the container runs as root.
+
+For each URL the script prints the result as JSON (company fields, demo, model, pitch note, pitch error, careers URL, `hiring_fde`, error), which provider and model answered, and the pitch markdown. It prints a `WARNING` line when a note was rejected and `pitch_note` is `null`. If a call raises, for example because of a bad API key, it prints an `ERROR` line and carries on with the next URL. The exit code is non zero if any URL failed. Nothing is written to Postgres and nothing is queued.
+
+### Option B: local Python with uv
+
+This needs [uv](https://docs.astral.sh/uv/) and a throwaway Redis for the cooldowns:
+
+```bash
+docker run -d --name gtm-redis -p 6379:6379 redis:7
+uv sync
+set -a
+. ./.env
+set +a
+REDIS_HOST=localhost uv run python -m scripts.real_run --csv results/real_results.csv peakflo.co cekura.ai simular.ai
+```
+
+Remove the Redis afterwards with `docker rm -f gtm-redis`.
+
+### Options for both
+
+- `--provider gemini|groq|all` tests one provider at a time (default `all`, Gemini first then Groq), for example `--provider groq`.
+- The CSV has one row per URL, errors included. It is safe to paste into a spreadsheet: a cell that starts with `=`, `+`, `-` or `@` gets a leading apostrophe. Error text in the CSV and in the output is redacted, so keys do not leak into it.
+- `--help` works without any keys set.
+
+## Run it as a service in 5 minutes
 
 You need Docker with Compose, a Gemini API key and a Groq API key (both have free tiers).
 
@@ -91,7 +150,7 @@ If the URL turns out to be a duplicate of a company that is already saved, the j
 
 An unknown or expired job id returns `404`.
 
-A job still finishes as `done` when the guard rejects the pitch note. Only a scrape failure or every model being busy makes a job `failed`.
+A job still finishes as `done` when the guard rejects the pitch note. A scrape failure, every model being busy, or a placeholder answer (see "Answer quality and duplicates") makes a job `failed`.
 
 ### GET /companies/{company_id} and GET /companies
 
@@ -125,11 +184,11 @@ Fetch the result using the `company_id` from a finished job. `GET /companies` li
 }
 ```
 
-The new fields are:
+The pitch fields are:
 
 | field | meaning |
 |---|---|
-| `cluster` | letter A to F chosen by the model, see the cluster table below |
+| `cluster` | letter A to G chosen by the model, see the cluster table below |
 | `cluster_reason` | one sentence that quotes the site, so you can see why that cluster was picked |
 | `demo` | the demo for that cluster, set by code from the cluster, never by the model |
 | `customer_pain` | the deployment pain the company's customers have, grounded in the site text |
@@ -189,16 +248,22 @@ The model picks one cluster letter. Code turns the letter into a demo, so the mo
 | D | supply chain and physical ops | none built (planned: capstone spin off) |
 | E | AI infra and dev tools | none built (planned: migration validator) |
 | F | vertical SaaS | none built (no default demo) |
+| G | computer use and desktop agents | none built (no demo built yet) |
 
-For clusters C to F the `demo` field says `none built`. The note still keeps the two placeholders and pitches the approach.
+For clusters C to G the `demo` field says `none built`. The note still keeps the two placeholders and pitches the approach. The prompt tells the model to choose G only when the core of the product is an agent that controls a screen, browser or desktop app by clicking and typing.
 
 ## How the grounding guard works
 
-The pitch note may only name products, customers and tools that appear in the text the model was given. The check is plain code in `pitch.py`, not another model call.
+The pitch note may only name products and companies that appear in the text the model was given. The check is plain code in `pitch.py`, not another model call. It looks at names only, not at facts (see [Limits](#limits)).
 
-1. It collects every capitalised word in `pitch_note`, and every word with an inner capital or a digit, such as `Peakflo`, `InvoiceGPT` or `G2`. A trailing `'s` is stripped and the two link placeholders are ignored.
-2. A word passes if it appears as a whole word, in any letter case, in the site text (title, description, about page text, the matched careers role phrases, the company name and the URL host). It also passes if it is on a short allowed list: sentence starters, pronouns, months, days and the user's own vocabulary such as `FDE`, `QA`, `GST` and `Loom`.
-3. A style check runs too: at most 150 words, no hyphen or dash characters, and the last line must contain `[LOOM_URL]` and end with `[REPO_URL]`.
+1. **Which words are checked.** Only words that look like a product or company name:
+   - a word with an inner capital letter or a digit anywhere in the note, such as `InvoiceGPT`, `G2` or `40`;
+   - a capitalised word in the middle of a sentence, such as `Peakflo`;
+   - a capitalised word that opens a sentence, only when the next word is `AI`, `Labs` or `Inc` (for example `Acme Labs` or `Together AI`).
+
+   Ordinary sentence openers such as `Simulated` or `Engineers` are not checked. Abbreviations like `e.g.`, `i.e.`, `vs.`, `etc.`, `Dr.` and `Inc.` do not start a new sentence, and numbered list markers such as `1.` are ignored. A trailing `'s` is stripped and the two link placeholders are ignored.
+2. **When a checked word passes.** It passes if it appears as a whole word, in any letter case, in the site text the guard knows: the page title, the meta description, the about page text, the matched careers role phrases, the company name and the URL host. The customers page text is not part of that. A checked word also passes if it is on a short allowed list of words that are never part of a product name: connectives, pronouns, months, days and the author's own vocabulary such as `FDE`, `QA`, `GST`, `Loom` and `India`. `Tally`, `Zoho` and `Hinglish` are not on the list, so a note may name them only when the target's own site does.
+3. **Style checks.** At most 150 words, no hyphen or dash characters, and the last line must contain `[LOOM_URL]` and end with `[REPO_URL]`.
 
 If either check fails, the worker asks the model once more. The retry prompt is the original prompt plus the reason, for example `Your previous pitch_note was rejected for: names not found on the site: InvoiceGPT. Write every field again and fix this.`
 
@@ -226,7 +291,7 @@ If the model answers `Not available`, `N/A`, `Unknown`, `None` or similar for `i
 {"status": "failed", "url": "https://example.com", "error": "The model could not fill in target_customer (answered 'Not available') from the site text. The site gave too little to go on, please check the site manually."}
 ```
 
-Real answers that only contain such a word, such as `None of the above insurance`, are kept.
+Real answers that only contain such a word, such as `None of the above insurance`, are kept. The prompt also tells the model never to describe the customer as a device, an operating system or a generic user group.
 
 ### Customers page
 
@@ -236,7 +301,7 @@ When the home page links to a customers page (`/customers`, `/case-studies`, `/u
 
 The same company used to be saved twice, for example `notion.com` and `notion.so` (which redirects to `notion.com`). Now, after the model has answered and before anything is saved, the worker looks for an existing row that matches either way:
 
-- **Final domain.** The host the site ends up on after redirects, lowercased, with `www.` removed. It is stored in the new `domain` column.
+- **Final domain.** The host the site ends up on after redirects, lowercased, with `www.` removed. It is stored in the `domain` column.
 - **Name, ignoring case.** The name is the main domain label of the input host, so subdomains are fine: `notion.so` gives `Notion`, `blog.stripe.com` gives `Stripe`, `shop.example.co.uk` gives `Example`.
 
 If a row matches, the job finishes as `done` with that row's `company_id`, plus `duplicate_of` and `matched_by` (`domain` or `name`), and no new row is written. A domain match is preferred over a name match, then the lowest id. The worker log says which company the URL was treated as a duplicate of and why. A job that failed is never treated as a duplicate.
@@ -278,9 +343,19 @@ For each job the worker tries providers in this order, and stops at the first an
 3. `gemini-3.8-flash`
 4. Groq `openai/gpt-oss-20b`
 
-**Cooldowns.** If a Gemini model returns a server error (5xx) or times out (30 seconds), it is put on cooldown: the worker sets a Redis key `cooldown:<model>` that expires after 120 seconds (`COOLDOWN_SECONDS` in `enrich.py`). While that key exists the model is skipped, and the next model is tried straight away. The cooldown lives in Redis, so it applies to every job, not just the one that hit the error. After 120 seconds the model is tried again.
+**Gemini cooldowns.** A cooldown is a Redis key `cooldown:<model>` with an expiry. While the key exists the model is skipped and the next one is tried straight away. The cooldown lives in Redis, so it applies to every job, not just the one that hit the error. What each Gemini error does:
 
-**Groq.** If every Gemini model fails or is cooling down, the worker asks Groq. Groq has no cooldown of its own. If Groq returns a server error, a rate limit error or a connection error, there is nothing left to try and the job fails with `All models are currently busy, please retry in a minute.` The same happens if Groq answers with JSON that does not fit the schema.
+| error | what happens |
+|---|---|
+| server error (5xx) or a timeout (30 seconds) | cooldown of 120 seconds, then the next model |
+| 429 (rate limit or quota) | cooldown of 120 seconds, then the next model |
+| 404 (model not found) | cooldown of 3600 seconds, then the next model |
+| any other 4xx (bad request, bad key, no permission) | logged, no cooldown, then the next model |
+| any other exception | not caught, the job fails with the error text |
+
+Because a bad key gets no cooldown, every job still pays a failed call to each Gemini model before it reaches Groq.
+
+**Groq.** If every Gemini model fails or is cooling down, the worker asks Groq. Groq has no cooldown. If Groq returns a server error, a rate limit error, a connection error, or JSON that does not fit the schema, there is nothing left to try and the job fails with `All models are currently busy, please retry in a minute.` Any other Groq error, such as a bad key, is not caught and the job fails with that error text.
 
 The model that actually answered is saved in the `model` column. The pitch retry goes through the same provider order, so a different model can answer it.
 
@@ -296,42 +371,23 @@ DB_URL=postgresql://user:pass@localhost:5432/dbname uv run python -m scripts.che
 
 The script works only inside a throwaway schema called `migration_check`, so it never touches a real `companies` table. It creates the old table, inserts a row, applies `schema.sql` twice, checks the row survived with `NULL` in the new columns, checks the two indexes exist, and prints `MIGRATION OK` as its last line.
 
-## Real run
-
-The tests mock the models. To see what the real models do on real sites, run the pitch engine directly. This calls `enrich.enrich(url)` for each URL, writes nothing to Postgres and queues nothing:
-
-```bash
-docker compose up -d --build
-docker compose run --rm worker /app/.venv/bin/python -m scripts.real_run peakflo.co cekura.ai
-```
-
-Run it inside the worker container, because it has your keys and a Redis for the Gemini cooldowns. To test one provider at a time:
-
-```bash
-docker compose run --rm worker /app/.venv/bin/python -m scripts.real_run --provider gemini cekura.ai
-docker compose run --rm worker /app/.venv/bin/python -m scripts.real_run --provider groq peakflo.co
-```
-
-For each URL it prints the full result as JSON (company fields, demo, model, pitch note, pitch error, careers URL, `hiring_fde`, error), which provider and model answered, and the pitch markdown. It prints a `WARNING` line when `pitch_note` is `null`, with the `pitch_error`. If a call raises, for example a bad API key or a 429, it prints an `ERROR: <exception class>: <message>` line and carries on with the next URL. The exit code is non zero if any URL ended with an error. `--help` works without any keys set.
-
 ## Limits
 
-- **Tested with mocked models only.** The pitch engine has not been run against the real Gemini or Groq APIs, so no live output exists yet. Until someone runs the real run above with their own keys, treat the Groq strict schema, the Gemini schema handling and the guard's false positive rate as unproven.
-- **The guard checks names, not facts.** An invented figure such as "cut errors by 40%" passes. An invented name written in lower case passes too, and so does an invented name made only of words that each appear somewhere on the site.
+- **No live run is recorded yet.** The tests mock the models, so the Groq strict schema, the Gemini schema handling and the guard's false positive rate are unproven against the real APIs. See Status.
+- **The guard checks names, not facts.** A number written as digits must appear on the site, but an invented claim made of ordinary words, such as "cuts errors by half", passes. An invented name written in lower case passes too, and so does an invented name made only of words that each appear somewhere on the site.
+- **A name that opens a sentence is not caught by design**, unless the next word is `AI`, `Labs` or `Inc`. An invented one word company that starts a sentence passes.
 - **The guard checks `pitch_note` only.** `customer_pain`, `tailoring` and `cluster_reason` can still contain names the site never mentioned.
 - **Style is partly enforced by the prompt only.** The word limit, the dash ban and the placeholder line are checked by code. British English and the conclusion first structure are only asked for in the prompt, and nothing verifies them.
-- **Scraped page text is untrusted.** It is fenced in the prompt with a tag and the model is told not to follow instructions inside it. That reduces prompt injection but does not remove it. A name an attacker puts in the page text counts as grounded, because the guard trusts the site text.
+- **Scraped page text is untrusted.** It is fenced in the prompt with a tag and the model is told not to follow instructions inside it. That reduces prompt injection but does not eliminate it. A name an attacker puts in the page text counts as grounded, because the guard trusts the site text.
 - **The model can pick the wrong cluster.** The mapping from cluster to demo is code, but the cluster letter is the model's judgement. Read `cluster_reason` to see what it relied on.
-- **Old rows have no pitch.** Companies enriched before this change have `null` pitch fields and the pitch endpoint returns 404 for them. There is no re-enrich endpoint yet.
-- **`hiring_fde` is often `null`.** Careers pages rendered with JavaScript or hosted on a hiring platform cannot be read by this scraper.
-- **Static HTML only.** The scraper uses httpx and BeautifulSoup, with no JavaScript rendering. Sites that render on the client, or that block bots, give `Site returned 403` or `No description could be found`.
+- **Static HTML only.** The scraper uses httpx and BeautifulSoup, with no JavaScript rendering. Sites that render on the client, or that block bots, give `Site returned 403` or `No description could be found`, or thin input. `hiring_fde` is often `null` for the same reason.
 - **Small input.** The model only sees the page title, the meta description, up to 2000 characters of paragraph text from the first link containing "about", up to 2000 characters from a customers page when one is linked, and one hiring line from the careers page. It does not crawl further, so thin sites give thin answers.
-- **Only some errors trigger fallback.** Gemini 5xx and timeouts cool down and fall through. Other errors, such as a bad API key or a 429 quota error, are not caught there. The job fails with that error text and no fallback runs. The same goes for a bad Groq key.
-- **One row per company, never refreshed.** There is no re-enrich endpoint. The API only short circuits on an exact normalised URL, so `notion.so` is queued as a job and the worker then dedupes it by final domain or name (see Duplicates). Paths count for that early check, but a path on an already saved domain is caught by the domain match.
+- **Name matching can merge companies.** Two different companies that share a main domain label on different TLDs are treated as one (see Duplicates).
+- **Old rows have no pitch, and there is no re-enrich endpoint.** Companies enriched before the pitch engine existed have `null` pitch fields and the pitch endpoint returns 404 for them. The API only short circuits on an exact normalised URL, so `notion.so` is queued as a job and the worker then dedupes it by final domain or name.
 - **Failures are not stored in Postgres.** A failed job only lives in Redis, so the `error` column in `companies` stays empty in practice.
 - **Job status expires after 24 hours.** If the worker restarts mid job, that job is marked `failed` and you need to resubmit.
 - **One worker, one job at a time.** Throughput is whatever your model quotas and the target site allow.
-- **No auth or rate limiting on the API, and Postgres is published on port 5432 with the password `secret`.** This is for local use. Change both before exposing it anywhere.
+- **For local use only.** There is no auth or rate limiting on the API, and Postgres is published on port 5432 with the password `secret`. Change both before exposing it anywhere.
 
 ## Development
 
