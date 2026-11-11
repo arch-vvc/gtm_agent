@@ -1,12 +1,14 @@
 # gtm_agent
 
-gtm_agent is a pitch engine for forward deployed engineer (FDE) outreach. You give it a startup's URL. It returns the cluster the company belongs to (A to G), the demo to send, the deployment pain the company's customers likely have, three changes to tailor the demo, and a pitch note of 150 words or fewer. A guard checks that the product and company names in the note appear on the company's own site, but it does not check facts (see [Limits](#limits)). It also reports whether the company's careers page lists a forward deployed or solutions engineer role. It is built for the author's own outreach to startups. It runs on FastAPI, a Redis queue, Postgres, and Gemini with a Groq fallback.
+gtm_agent is a pitch engine for forward deployed engineer (FDE) outreach. You give it a startup's URL. It returns the cluster the company belongs to (A to G), the demo to send, the deployment pain the company's customers likely have, three changes to tailor the demo, and a pitch note of 150 words or fewer that names only things found on the company's own site (a name check, not a fact check, see [Limits](#limits) for the honest caveat). It also reports whether the company's careers page lists a forward deployed or solutions engineer role.
 
 ## Status
 
-- **Verified:** the test suite (471 tests, all model calls mocked), the migration check against Postgres 16, and an end to end run against real Postgres and Redis with a faked scraper and a faked model.
+- **Verified:** the test suite (479 tests, all model calls mocked), the migration check against Postgres 16, and an end to end run against real Postgres and Redis with a faked scraper and a faked model.
 - **Not verified:** no run against live Gemini or Groq has been recorded in this repo yet. The first live results go in the placeholder below.
-- **Earlier live runs** on the author's machine exposed three problems: a company saved with every field `Not available`, a customer described as a device user group, and the same company saved twice under two domains. They are fixed and tested here, but these fixes have not been re-run live yet.
+- **Earlier live runs** on the author's machine exposed three problems: a company saved with every field `Not available`, a customer described as a device user group, and the same company saved twice under two domains. They are addressed in code and covered by mocked tests (junk answers are rejected, the prompt asks for the buyer type and reads the customers page, duplicates are merged on final domain), but not re-run live.
+
+To see a real result, follow [Reproduce the results](#reproduce-the-results) below; the output lands in `results/real_results.csv`.
 
 ## Results
 
@@ -26,7 +28,7 @@ You need Docker, a Gemini API key and a Groq API key (both have free tiers). Cop
 cp .env.example .env
 ```
 
-Open `.env` and replace the two placeholder keys. This run makes real API calls and uses a small amount of your quota.
+Open `.env` and replace the two placeholder keys. Leave `DB_URL` and `REDIS_HOST` as they are, they point at the containers. This run makes real API calls and uses a small amount of your quota.
 
 ### Option A: Docker only (recommended)
 
@@ -36,7 +38,7 @@ mkdir -p results
 docker compose run --rm -v "$PWD/results:/app/results" worker /app/.venv/bin/python -m scripts.real_run --csv results/real_results.csv peakflo.co cekura.ai simular.ai
 ```
 
-The folder mount is needed because the container is removed after the run (`--rm`), so a CSV written inside it would be lost. Run it inside the worker container because that container has your keys and a Redis for the Gemini cooldowns. On Linux the CSV may be owned by root, because the container runs as root.
+The `docker compose up -d --build` line is only needed so that Redis and the built image exist, since the run itself does not use the database. The folder mount is needed because the container is removed after the run (`--rm`), so a CSV written inside it would be lost. Run it inside the worker container because that container has your keys and a Redis for the Gemini cooldowns. On Linux the CSV may be owned by root, because the container runs as root.
 
 For each URL the script prints the result as JSON (company fields, demo, model, pitch note, pitch error, careers URL, `hiring_fde`, error), which provider and model answered, and the pitch markdown. It prints a `WARNING` line when a note was rejected and `pitch_note` is `null`. If a call raises, for example because of a bad API key, it prints an `ERROR` line and carries on with the next URL. The exit code is non zero if any URL failed. Nothing is written to Postgres and nothing is queued.
 
@@ -63,15 +65,16 @@ Remove the Redis afterwards with `docker rm -f gtm-redis`.
 
 ## Run it as a service in 5 minutes
 
-You need Docker with Compose, a Gemini API key and a Groq API key (both have free tiers).
+The service runs on FastAPI, a Redis queue, Postgres, and Gemini with a Groq fallback. It was built for the author's own outreach to startups.
+
+You need Docker with Compose, a Gemini API key and a Groq API key (both have free tiers). Clone the repo, then set up `.env` with your two keys as described in [Reproduce the results](#reproduce-the-results):
 
 ```bash
 git clone https://github.com/arch-vvc/gtm_agent
 cd gtm_agent
-cp .env.example .env
 ```
 
-Open `.env` and replace the two placeholder keys with your own. Leave `DB_URL` and `REDIS_HOST` as they are, they point at the containers below.
+Then start everything:
 
 ```bash
 docker compose up -d --build
@@ -262,7 +265,7 @@ The pitch note may only name products and companies that appear in the text the 
    - a capitalised word that opens a sentence, only when the next word is `AI`, `Labs` or `Inc` (for example `Acme Labs` or `Together AI`).
 
    Ordinary sentence openers such as `Simulated` or `Engineers` are not checked. Abbreviations like `e.g.`, `i.e.`, `vs.`, `etc.`, `Dr.` and `Inc.` do not start a new sentence, and numbered list markers such as `1.` are ignored. A trailing `'s` is stripped and the two link placeholders are ignored.
-2. **When a checked word passes.** It passes if it appears as a whole word, in any letter case, in the site text the guard knows: the page title, the meta description, the about page text, the matched careers role phrases, the company name and the URL host. The customers page text is not part of that. A checked word also passes if it is on a short allowed list of words that are never part of a product name: connectives, pronouns, months, days and the author's own vocabulary such as `FDE`, `QA`, `GST`, `Loom` and `India`. `Tally`, `Zoho` and `Hinglish` are not on the list, so a note may name them only when the target's own site does.
+2. **When a checked word passes.** It passes if it appears as a whole word, in any letter case, in the site text the guard knows: the page title, the meta description, the about page text, the customers page text (when the site has one), the matched careers role phrases, the company name and the URL host. A checked word also passes if it is on a short allowed list of words that are never part of a product name: connectives, pronouns, months, days and the author's own vocabulary such as `FDE`, `QA`, `GST`, `Loom` and `India`. `Tally`, `Zoho` and `Hinglish` are not on the list, so a note may name them only when the target's own site does.
 3. **Style checks.** At most 150 words, no hyphen or dash characters, and the last line must contain `[LOOM_URL]` and end with `[REPO_URL]`.
 
 If either check fails, the worker asks the model once more. The retry prompt is the original prompt plus the reason, for example `Your previous pitch_note was rejected for: names not found on the site: InvoiceGPT. Write every field again and fix this.`
@@ -295,7 +298,7 @@ Real answers that only contain such a word, such as `None of the above insurance
 
 ### Customers page
 
-When the home page links to a customers page (`/customers`, `/case-studies`, `/use-cases` and close variants, or a link with that visible text), the scraper reads it too: its headings, longer paragraphs and the alt text of customer logos, up to 2000 characters. The model is told to base `target_customer` on it, so the answer names a buyer such as "product and engineering teams at larger companies" instead of "users". Login, help and jobs links are ignored, and only links on the same site are followed. If that page cannot be fetched the job carries on without it.
+When the home page links to a customers page (`/customers`, `/case-studies`, `/use-cases` and close variants, or a link with that visible text), the scraper reads it too: its headings, longer paragraphs and the alt text of customer logos, up to 2000 characters. The model is told to base `target_customer` on it, so the answer names a buyer such as "product and engineering teams at larger companies" instead of "users". Login, help and jobs links are ignored, and only links on the same site are followed. The same text counts as grounded for the guard, so a note may name a customer listed there. If that page cannot be fetched the job carries on without it.
 
 ### Duplicates
 
