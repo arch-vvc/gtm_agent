@@ -307,9 +307,13 @@ CLAIM_VERBS = {
     "rebuilt": "rebuild",
     "set up": "set up",
 }
-# "I adapted", "I have adapted" and "I've adapted", also after First, Second, Third or a comma.
+# "I adapted", "I have adapted", "I had adapted" and "I've adapted", with an optional adverb
+# such as "I also adapted", also after First, Second, Third or a comma.
 # Only the first person is checked, so "they adapted" and "Adapted from" pass.
-FIRST_PERSON = rf"\bI(?:\s+have|['{CURLY_APOSTROPHE}]ve)?\s+"
+CLAIM_ADVERBS = (
+    "also|then|just|now|later|quickly|already|previously|even|further|additionally|subsequently|recently|personally"
+)
+FIRST_PERSON = rf"\bI(?:\s+(?:have|had)|['{CURLY_APOSTROPHE}]ve)?\s+(?:(?:{CLAIM_ADVERBS})\s+)?"
 CLAIM_PATTERN = re.compile(
     FIRST_PERSON + "(" + "|".join(verb.replace(" ", r"\s+") for verb in CLAIM_VERBS) + r")\b",
     re.IGNORECASE,
