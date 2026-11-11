@@ -49,6 +49,69 @@ def get_about_text(about_url):
     return text[:2000] or None
 
 
+CAREERS_WORDS=("career", "jobs", "join us", "join-us", "work with us", "work-with-us")
+
+FDE_ROLE_PHRASES=(
+    "forward deployed",
+    "solutions engineer",
+    "solution engineer",
+    "solutions architect",
+    "solution architect",
+    "deployment engineer",
+    "customer engineer",
+    "implementation engineer",
+)
+
+
+def find_careers_url(soup, base_url):
+    for link in soup.find_all("a", href=True):
+        href=link["href"].lower()
+        if href.startswith("#"):
+            continue
+        text=link.get_text().lower()
+        if any(word in href or word in text for word in CAREERS_WORDS):
+            return urljoin(base_url, link["href"])
+    return None
+
+
+def get_careers_text(careers_url):
+    if careers_url is None:
+        return None
+    try:
+        response=httpx.get(careers_url, headers=headers, follow_redirects=True, timeout=10)
+    except httpx.HTTPError:
+        return None
+
+    if response.is_error:
+        return None
+
+    soup=BeautifulSoup(response.text, "html.parser")
+    text=soup.get_text(" ", strip=True)
+    return text[:20000] or None
+
+
+def find_fde_roles(text):
+    if not text:
+        return []
+    text=text.lower().replace("-", " ")
+    return [phrase for phrase in FDE_ROLE_PHRASES if phrase in text]
+
+
+def failed_description(url, name, error):
+    return {
+        "url": url,
+        "name": name,
+        "title": None,
+        "description": None,
+        "about_url": None,
+        "about": None,
+        "careers_url": None,
+        "hiring_fde": None,
+        "fde_roles": [],
+        "error": error,
+    }
+
+
 def get_description(url):
     url=normalise_url(url)
 
@@ -57,10 +120,10 @@ def get_description(url):
     try:
         response=httpx.get(url, headers=headers, follow_redirects=True, timeout=10)
     except httpx.HTTPError:
-        return {"name": name, "title": None, "description": None, "about_url": None, "about": None, "error": "Could not reach site"}
+        return failed_description(url, name, "Could not reach site")
 
     if response.is_error:
-        return {"name": name, "title": None, "description": None, "about_url": None, "about": None, "error": f"Site returned {response.status_code}"}
+        return failed_description(url, name, f"Site returned {response.status_code}")
    
     soup=BeautifulSoup(response.text, "html.parser")
 
@@ -76,7 +139,26 @@ def get_description(url):
     about_url=find_about_url(soup, str(response.url))
     about=get_about_text(about_url)
 
-    return {"name": name, "title": title, "description": description, "about_url": about_url, "about": about, "error": None}
+    careers_url=find_careers_url(soup, str(response.url))
+    careers_text=get_careers_text(careers_url)
+    fde_roles=find_fde_roles(careers_text)
+    if careers_text is None:
+        hiring_fde=None
+    else:
+        hiring_fde=bool(fde_roles)
+
+    return {
+        "url": url,
+        "name": name,
+        "title": title,
+        "description": description,
+        "about_url": about_url,
+        "about": about,
+        "careers_url": careers_url,
+        "hiring_fde": hiring_fde,
+        "fde_roles": fde_roles,
+        "error": None,
+    }
 
 
 if __name__ == "__main__":
