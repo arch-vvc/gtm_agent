@@ -471,3 +471,63 @@ def test_placeholders_do_not_create_a_false_sentence_start():
     assert pitch.candidate_names("Watch. [LOOM_URL] Foo and Bar") == ["Foo", "Bar"]
     assert pitch.candidate_names("[LOOM_URL] Foo is here.") == ["Foo"]
     assert pitch.candidate_names("Loom: [LOOM_URL] Repo: [REPO_URL]") == ["Repo"]
+
+
+@pytest.mark.parametrize(
+    ("note", "expected"),
+    [
+        ("We use tools, e.g. Zendesk.", ["Zendesk"]),
+        ("Tools, i.e. Zendesk.", ["Zendesk"]),
+        ("Compare Foo vs. Bar today.", ["Foo", "Bar"]),
+        ("Gong, etc. Zendesk too.", ["Zendesk"]),
+        ("Dr. Smith uses Acme.", ["Smith", "Acme"]),
+        ("Ask Mr. Zendesk.", ["Mr", "Zendesk"]),
+        ("Ask Mrs. Zendesk about St. Louis.", ["Mrs", "Zendesk", "St", "Louis"]),
+        ("Acme Inc. Zendesk helps.", ["Acme", "Inc", "Zendesk"]),
+    ],
+)
+def test_abbreviations_do_not_end_a_sentence(note, expected):
+    assert pitch.candidate_names(note) == expected
+
+
+def test_abbreviation_followed_by_name_is_ungrounded():
+    assert pitch.ungrounded_names("We use tools, e.g. Zendesk.", "Goodco") == ["Zendesk"]
+    assert pitch.ungrounded_names("Ask Mr. Zendesk.", "Goodco") == ["Zendesk"]
+
+
+def test_abbreviation_tokens_alone_do_not_fail_a_grounded_note():
+    assert pitch.ungrounded_names("Ask Dr. Smith today.", "Smith runs Goodco") == []
+    assert pitch.ungrounded_names("Dr. Smith helps.", "Smith runs Goodco") == []
+    assert pitch.ungrounded_names("We met Mr. Smith, Mrs. Smith and Ms. Smith at St. Smith.", "Smith") == []
+    assert pitch.ungrounded_names("We sell to Acme Inc. and Acme Ltd.", "Acme") == []
+
+
+def test_real_sentence_ends_still_work_with_plain_words():
+    assert pitch.candidate_names("Simulated callers help. Engineers then fix it.") == []
+    # Accepted over flag: a sentence that really ends in an abbreviation is read as mid sentence.
+    assert pitch.candidate_names("He left Inc. Voice teams ship.") == ["Inc", "Voice"]
+
+
+def test_numbered_and_lettered_list_markers_are_not_candidates():
+    assert pitch.candidate_names("1. Voice teams ship scripts.\n2. Simulated callers help.") == []
+    assert pitch.candidate_names("1. Zendesk integrates") == []
+    assert pitch.candidate_names("2) Second reason\n  3. Third reason") == []
+    assert pitch.candidate_names("a) Voice teams ship.\nB. Simulated callers help.") == []
+    assert pitch.candidate_names("* 1. Voice teams ship.") == []
+    assert pitch.candidate_names("- 1) Voice teams ship.") == []
+    assert pitch.candidate_names("12. Voice teams ship.") == []
+
+
+def test_digits_outside_list_markers_stay_candidates():
+    assert pitch.candidate_names("It cuts errors by 40 percent.") == ["40"]
+    assert pitch.candidate_names("We ran 20 simulated callers.") == ["20"]
+    assert pitch.candidate_names("1. Try InvoiceGPT now.") == ["InvoiceGPT"]
+    assert pitch.candidate_names("1. It cuts errors by 40 percent.") == ["40"]
+    assert pitch.candidate_names("100. Voice teams ship.") == ["100"]
+
+
+def test_windows_line_endings():
+    note = "Hi there.\r\nVoice teams ship scripts.\r\nLoom: [LOOM_URL] Repo: [REPO_URL]"
+    assert pitch.candidate_names(note) == ["Repo"]
+    assert pitch.pitch_violations(note, SITE) == []
+    assert pitch.candidate_names("1. Voice teams ship.\r\n2. Simulated callers help.\r\n") == []
