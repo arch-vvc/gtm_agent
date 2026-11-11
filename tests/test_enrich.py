@@ -28,7 +28,7 @@ def test_enrich_returns_company_from_mocked_scraper_and_llm(monkeypatch):
 
     out = enrich.enrich("stripe.com")
 
-    assert out == {"name": "Stripe", "company": COMPANY, "model": "fake-model", "error": None}
+    assert out == {"name": "Stripe", "company": COMPANY, "model": "fake-model", "error": None, "domain": None}
     assert "Online payment processing" in prompts[0]
     assert "Millions of companies" in prompts[0]
 
@@ -276,3 +276,31 @@ def test_prompt_never_asks_for_a_device_or_generic_user_group(monkeypatch):
     prompt = prompt_for(monkeypatch, SITE)
 
     assert "never answer with a device, operating system or a generic user group" in prompt
+
+
+def test_enrich_result_carries_the_domain_from_the_scraper(monkeypatch):
+    site = {**SITE, "domain": "notion.com"}
+    monkeypatch.setattr(enrich, "get_description", lambda url: site)
+    monkeypatch.setattr(enrich, "ask", lambda prompt: (COMPANY, "fake-model"))
+
+    out = enrich.enrich("notion.so")
+
+    assert out["domain"] == "notion.com"
+    assert out["error"] is None
+
+
+def test_enrich_result_domain_is_none_when_the_site_dict_has_no_domain(monkeypatch):
+    monkeypatch.setattr(enrich, "get_description", lambda url: SITE)
+    monkeypatch.setattr(enrich, "ask", lambda prompt: (COMPANY, "fake-model"))
+
+    assert enrich.enrich("stripe.com")["domain"] is None
+
+
+def test_enrich_error_result_still_carries_the_domain(monkeypatch):
+    site = {**SITE, "domain": "notion.so", "description": None, "about": None, "error": "Could not reach site"}
+    monkeypatch.setattr(enrich, "get_description", lambda url: site)
+
+    out = enrich.enrich("notion.so")
+
+    assert out["error"] == "Could not reach site"
+    assert out["domain"] == "notion.so"
