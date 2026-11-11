@@ -29,7 +29,7 @@ class Company(BaseModel):
     industry: str
     what_they_sell: str
     target_customer: str
-    cluster: Literal["A", "B", "C", "D", "E", "F"]
+    cluster: Literal["A", "B", "C", "D", "E", "F", "G"]
     cluster_reason: str
     customer_pain: str
     tailoring: list[str] = Field(min_length=3, max_length=3)
@@ -230,6 +230,7 @@ For target_customer, never answer with a device, operating system or a generic u
 
 cluster: pick the one letter that best fits the company.
 {labels}
+Choose G for products that operate a computer, browser or desktop application on a person's behalf (computer use agents, desktop automation, RPA replacement).
 
 cluster_reason: one sentence that quotes the site's own words.
 customer_pain: one sentence, grounded in the text, about the deployment pain the company's customers have.
