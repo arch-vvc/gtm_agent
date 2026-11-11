@@ -67,3 +67,11 @@ def test_compose_services_in_commands_exist():
 
 def test_csv_flag_is_documented():
     assert "--csv" in README
+
+
+def test_status_records_the_live_runs_honestly():
+    status = section("Status")
+    assert "json_validate_failed" in status
+    assert "has not been re-run live" in status
+    assert "no run against live" not in status
+

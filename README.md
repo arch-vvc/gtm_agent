@@ -4,8 +4,8 @@ gtm_agent is a pitch engine for forward deployed engineer (FDE) outreach. You gi
 
 ## Status
 
-- **Verified:** the test suite (479 tests, all model calls mocked), the migration check against Postgres 16, and an end to end run against real Postgres and Redis with a faked scraper and a faked model.
-- **Not verified:** no run against live Gemini or Groq has been recorded in this repo yet. The first live results go in the placeholder below.
+- **Verified:** the test suite (490 tests, all model calls mocked), the migration check against Postgres 16, and an end to end run against real Postgres and Redis with a faked scraper and a faked model.
+- **Live runs seen so far (author's machine):** one live Gemini run on cekura.ai gave cluster A, the demo `voice-agent-call-qa` and an FDE role found. Its pitch note was written in the wrong voice (as a vendor selling a product), which is now fixed in the prompt and has not been re-run live. The first live Groq run failed with `json_validate_failed` because the reasoning model spent its token budget before producing JSON. This is fixed here with low reasoning effort and a 4096 token budget, and that fix has not been re-run live. No results CSV exists yet; the first results go in the placeholder below.
 - **Earlier live runs** on the author's machine exposed three problems: a company saved with every field `Not available`, a customer described as a device user group, and the same company saved twice under two domains. They are addressed in code and covered by mocked tests (junk answers are rejected, the prompt asks for the buyer type and reads the customers page, duplicates are merged on final domain), but not re-run live.
 
 To see a real result, follow [Reproduce the results](#reproduce-the-results) below; the output lands in `results/real_results.csv`.
@@ -358,7 +358,7 @@ For each job the worker tries providers in this order, and stops at the first an
 
 Because a bad key gets no cooldown, every job still pays a failed call to each Gemini model before it reaches Groq.
 
-**Groq.** If every Gemini model fails or is cooling down, the worker asks Groq. Groq has no cooldown. If Groq returns a server error, a rate limit error, a connection error, or JSON that does not fit the schema, there is nothing left to try and the job fails with `All models are currently busy, please retry in a minute.` Any other Groq error, such as a bad key, is not caught and the job fails with that error text.
+**Groq.** If every Gemini model fails or is cooling down, the worker asks Groq. Groq has no cooldown. The request keeps the strict JSON schema and sets `reasoning_effort` to `low` and `max_completion_tokens` to 4096, because `openai/gpt-oss-20b` is a reasoning model and with the default budget it can spend everything on reasoning and return no JSON. If Groq returns a server error, a rate limit error, a connection error, a 400 (bad request), or JSON that does not fit the schema, there is nothing left to try and the job fails with `All models are currently busy, please retry in a minute.` A 400 is logged with its status and message only. Any other Groq error, such as a bad key, is not caught and the job fails with that error text, so a bad key stays loud.
 
 The model that actually answered is saved in the `model` column. The pitch retry goes through the same provider order, so a different model can answer it.
 
@@ -376,7 +376,7 @@ The script works only inside a throwaway schema called `migration_check`, so it 
 
 ## Limits
 
-- **No live run is recorded yet.** The tests mock the models, so the Groq strict schema, the Gemini schema handling and the guard's false positive rate are unproven against the real APIs. See Status.
+- **Little live evidence.** The tests mock the models. Only one live Gemini run has been seen, and the Groq fix and the new pitch note voice have not been re-run live, so the guard's false positive rate is unproven against the real APIs. See Status.
 - **The guard checks names, not facts.** A number written as digits must appear on the site, but an invented claim made of ordinary words, such as "cuts errors by half", passes. An invented name written in lower case passes too, and so does an invented name made only of words that each appear somewhere on the site.
 - **A name that opens a sentence is not caught by design**, unless the next word is `AI`, `Labs` or `Inc`. An invented one word company that starts a sentence passes.
 - **The guard checks `pitch_note` only.** `customer_pain`, `tailoring` and `cluster_reason` can still contain names the site never mentioned.

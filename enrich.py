@@ -23,6 +23,9 @@ gemini_client=genai.Client(http_options=types.HttpOptions(timeout=30000))
 groq_client=Groq(timeout=30)
 GEMINI_MODELS=["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3.8-flash"]
 GROQ_MODEL="openai/gpt-oss-20b"
+# gpt-oss is a reasoning model: without these the default budget is spent thinking and no JSON comes back.
+GROQ_REASONING_EFFORT="low"
+GROQ_MAX_COMPLETION_TOKENS=4096
 
 
 class Company(BaseModel):
@@ -128,11 +131,17 @@ def ask_groq(prompt):
                     "schema": strict_schema(Company),
                 },
             },
+            reasoning_effort=GROQ_REASONING_EFFORT,
+            max_completion_tokens=GROQ_MAX_COMPLETION_TOKENS,
         )
         print("Groq answered")
         return Company.model_validate_json(response.choices[0].message.content), GROQ_MODEL
     except (groq.InternalServerError, groq.RateLimitError, groq.APIConnectionError):
         print("Groq is busy too")
+        return None, None
+    except groq.BadRequestError as error:
+        # Only the status and message are logged, never headers or keys. A bad key (AuthenticationError) stays loud.
+        print(f"Groq rejected the request ({error.status_code}: {error.message}), giving up")
         return None, None
     except (ValidationError, ValueError):
         # Groq answered, but not with JSON that fits the schema (ValueError covers bad JSON).
@@ -236,15 +245,18 @@ cluster_reason: one sentence that quotes the site's own words.
 customer_pain: one sentence, grounded in the text, about the deployment pain the company's customers have.
 tailoring: exactly 3 changes to make to a demo for this company, covering sample data, persona names and terminology.
 
-pitch_note: a short note to the company's founder or FDE lead. These are the demos that exist:
+pitch_note: a short note to the company's founder or FDE lead. It is written by an engineer who has built a working demo and wants a conversation about a forward deployed engineer or solutions engineering role. These are the demos that exist:
 {BUILT_DEMOS}
 Rules for pitch_note:
-1. At most 150 words, in British English.
-2. No hyphens or dashes of any kind.
-3. Conclusion first, then 2 or 3 reasons.
-4. Name only products and customers that appear in the text above.
-5. Never name the demo repos. Describe the demo in plain words instead.
-6. The final line must be exactly: Loom: {pitch.LOOM} Repo: {pitch.REPO}"""
+1. Write in the first person singular ("I built", "I would adapt"). Never speak as a vendor: never say "our product" or "our workflow", and never tell the company to "adopt" or "buy" anything.
+2. Present the demo as something I built to show how I would work on this company's customers' deployment problems, adapted to their world using the tailoring changes. If the company already sells the same kind of product as the demo, say the demo was built to understand that problem space and show how it would be adapted, not that the company needs it.
+3. Structure: the first line is the conclusion in one sentence (what I built and why it matters for this company's customers), then a blank line, then 2 or 3 short reasons, each on a new line starting with First, Second and Third (plain words, no list markers), then a blank line, then the last line exactly as below.
+4. At most 150 words, in British English.
+5. No hyphens or dashes of any kind.
+6. No flattery or hype words such as perfectly, excited, love, passionate, game changing.
+7. Name only products and customers that appear in the text above. Do not invent numbers.
+8. Never name the demo repos. Describe the demo in plain words instead.
+9. The last line must be exactly: Loom: {pitch.LOOM} Repo: {pitch.REPO}"""
 
 
 def junk_error(company, missing):
