@@ -80,9 +80,13 @@ def test_status_records_the_live_runs_honestly():
 
 def test_status_records_the_latest_live_run_and_the_unverified_fixes():
     status = section("Status")
-    assert "3 companies were enriched" in status
-    assert "none on Simular's own careers page" in status
+    assert "Peakflo (cluster B) and Cekura (cluster A) were enriched" in status
+    assert "Simular failed" in status
+    assert "503" in status
+    assert "without trying the second Groq model" in status
+    assert "I adapted the simulation engine" in status
     assert "invented a deadline" in status
     assert "NOT yet re-run live" in status
+    assert "falls through to the next model" in status
+    assert "earlier run on older code" in status
     assert "No results CSV" not in status
-    assert "no results CSV is committed" in status

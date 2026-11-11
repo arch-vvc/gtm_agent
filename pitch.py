@@ -280,9 +280,71 @@ def ungrounded_names(note, corpus):
     return missing
 
 
+# Past tense work the author cannot have done for this company, mapped to the base form used in the advice.
+CLAIM_VERBS = {
+    "adapted": "adapt",
+    "integrated": "integrate",
+    "implemented": "implement",
+    "designed": "design",
+    "developed": "develop",
+    "configured": "configure",
+    "aligned": "align",
+    "extended": "extend",
+    "added": "add",
+    "created": "create",
+    "wrote": "write",
+    "tailored": "tailor",
+    "customised": "customise",
+    "customized": "customize",
+    "updated": "update",
+    "modified": "modify",
+    "trained": "train",
+    "deployed": "deploy",
+    "connected": "connect",
+    "optimised": "optimise",
+    "optimized": "optimize",
+    "refactored": "refactor",
+    "rebuilt": "rebuild",
+    "set up": "set up",
+}
+# "I adapted", "I have adapted" and "I've adapted", also after First, Second, Third or a comma.
+# Only the first person is checked, so "they adapted" and "Adapted from" pass.
+FIRST_PERSON = rf"\bI(?:\s+have|['{CURLY_APOSTROPHE}]ve)?\s+"
+CLAIM_PATTERN = re.compile(
+    FIRST_PERSON + "(" + "|".join(verb.replace(" ", r"\s+") for verb in CLAIM_VERBS) + r")\b",
+    re.IGNORECASE,
+)
+BUILT_PATTERN = re.compile(FIRST_PERSON + r"built\b", re.IGNORECASE)
+
+
+def check_pitch_claims(note):
+    """Return one violation per first person past tense claim of work other than "I built".
+
+    Adapting a demo to the company is something the author would do, not has
+    done, so it must be in the future tense.
+    """
+    violations = []
+    seen = set()
+    for found in CLAIM_PATTERN.finditer(note or ""):
+        phrase = " ".join(found.group().split())
+        verb = " ".join(found.group(1).lower().split())
+        if phrase.lower() in seen:
+            continue
+        seen.add(phrase.lower())
+        violations.append(
+            f"note claims work on this company that was not done: '{phrase}' (write 'I would {CLAIM_VERBS[verb]}')"
+        )
+    return violations
+
+
+def claims_built_demo(note):
+    """Say whether the note says "I built", "I have built" or "I've built"."""
+    return bool(BUILT_PATTERN.search(note or ""))
+
+
 def pitch_violations(note, site):
-    """Return style violations plus one line for the ungrounded names, if any."""
-    violations = check_pitch_note(note)
+    """Return style violations, claim violations plus one line for the ungrounded names, if any."""
+    violations = check_pitch_note(note) + check_pitch_claims(note)
     missing = ungrounded_names(note, build_corpus(site))
     if missing:
         violations.append("names not found on the site: " + ", ".join(missing))
