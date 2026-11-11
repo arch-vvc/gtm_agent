@@ -69,30 +69,45 @@ def hiring_label(value):
     return {"true": "yes", "false": "no"}.get((value or "").strip().lower(), "unknown")
 
 
+# Model text is untrusted and ends up in a public README. Characters that could
+# start a link, an image or a code span (and the backslash itself) get one
+# backslash in front. The ampersand and angle brackets become the HTML entities
+# &amp; &lt; &gt; so no raw tag survives. This runs once per piece of model
+# text, on the shortened text; the fixed text of the table (headers, prefixes,
+# footnote) is never escaped. Pipes are escaped separately in markdown_line.
+MD_BACKSLASH = re.compile(r"([\\\[\]()!`])")
+HTML_ENTITIES = {"&": "&amp;", "<": "&lt;", ">": "&gt;"}
+
+
+def md_escape(text):
+    text = MD_BACKSLASH.sub(r"\\\1", text)
+    return "".join(HTML_ENTITIES.get(char, char) for char in text)
+
+
 def findings(row):
     """List what went wrong in one row, or the text saying the automatic checks found nothing."""
     found = []
     if clean(row.get("error")):
-        found.append("failed: " + clean(row["error"]))
+        found.append("failed: " + md_escape(clean(row["error"])))
     if clean(row.get("pitch_error")):
-        found.append("note rejected: " + clean(row["pitch_error"]))
+        found.append("note rejected: " + md_escape(clean(row["pitch_error"])))
     note = row.get("pitch_note") or ""
     if note.strip():
-        found += pitch.check_pitch_claims(note)
-        found += pitch.check_pitch_note(note)
-    return "; ".join(clean(item) for item in found) or NOTHING_FOUND
+        found += [md_escape(clean(item)) for item in pitch.check_pitch_claims(note)]
+        found += [md_escape(clean(item)) for item in pitch.check_pitch_note(note)]
+    return "; ".join(found) or NOTHING_FOUND
 
 
 def table_cells(row):
     note = shorten(clean(first_line(row.get("pitch_note"))), NOTE_LIMIT)
     reason = shorten(clean(row.get("cluster_reason")), REASON_LIMIT)
     return [
-        clean(row.get("name")) or clean(row.get("url")) or "n/a",
-        clean(row.get("cluster")) or "n/a",
-        clean(row.get("demo")) or "n/a",
+        md_escape(clean(row.get("name")) or clean(row.get("url")) or "n/a"),
+        md_escape(clean(row.get("cluster")) or "n/a"),
+        md_escape(clean(row.get("demo")) or "n/a"),
         hiring_label(row.get("hiring_fde")),
-        reason,
-        note,
+        md_escape(reason),
+        md_escape(note),
         findings(row),
     ]
 
@@ -106,8 +121,15 @@ def markdown_line(cells):
 
 
 def read_rows(path):
-    with open(path, encoding="utf-8", newline="") as handle:
-        return list(csv.DictReader(handle))
+    """Read the CSV (a UTF-8 BOM is allowed). Raise ValueError when a needed column is missing."""
+    with open(path, encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        names = reader.fieldnames or []
+        if "pitch_note" not in names:
+            raise ValueError("column pitch_note is missing")
+        if "name" not in names and "url" not in names:
+            raise ValueError("columns name and url are both missing")
+        return list(reader)
 
 
 def build_block(rows):
@@ -146,10 +168,14 @@ def parse_args(argv):
 def main(argv=None):
     args = parse_args(argv)
     csv_path = Path(args.csv)
-    if not csv_path.is_file():
+    if not csv_path.is_file():  # also true for a directory
         print(f"error: results file {csv_path} not found", file=sys.stderr)
         return 1
-    block = build_block(read_rows(csv_path))
+    try:
+        block = build_block(read_rows(csv_path))
+    except (UnicodeDecodeError, OSError, ValueError) as error:
+        print(f"error: cannot read results file {csv_path}: {error}", file=sys.stderr)
+        return 1
     if not (args.write_readme or args.check):
         print(block)
         return 0
@@ -157,7 +183,11 @@ def main(argv=None):
     if not readme_path.is_file():
         print(f"error: README {readme_path} not found", file=sys.stderr)
         return 1
-    text = readme_path.read_text(encoding="utf-8")
+    try:
+        text = readme_path.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError) as error:
+        print(f"error: cannot read README {readme_path}: {error}", file=sys.stderr)
+        return 1
     try:
         before, inside, after = split_readme(text)
     except ValueError as error:
@@ -169,7 +199,11 @@ def main(argv=None):
             return 0
         print("README results block is out of date, run: python -m scripts.results_table --write-readme")
         return 1
-    readme_path.write_text(before + wanted + after, encoding="utf-8")
+    try:
+        readme_path.write_text(before + wanted + after, encoding="utf-8")
+    except OSError as error:
+        print(f"error: cannot write README {readme_path}: {error}", file=sys.stderr)
+        return 1
     print(f"README results block updated from {csv_path}")
     return 0
 
