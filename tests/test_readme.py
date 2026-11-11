@@ -76,3 +76,13 @@ def test_status_records_the_live_runs_honestly():
     assert "Simular" in status
     assert "no run against live" not in status
 
+
+
+def test_status_records_the_latest_live_run_and_the_unverified_fixes():
+    status = section("Status")
+    assert "3 companies were enriched" in status
+    assert "none on Simular's own careers page" in status
+    assert "invented a deadline" in status
+    assert "NOT yet re-run live" in status
+    assert "No results CSV" not in status
+    assert "no results CSV is committed" in status

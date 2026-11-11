@@ -286,7 +286,22 @@ Rules for pitch_note:
 8. Describe a demo ONLY with the facts above. Do not claim integrations, metrics, interfaces, data sources, file formats or features that are not listed. You may say how you WOULD adapt it, in the future tense, using the tailoring changes.
 9. If you choose cluster C, D, E, F or G (the labels that say not built yet, no demo built yet or no default demo), this rule overrides rules 1 to 3 on the demo: do not say or imply that a demo was built, and do not mention or describe the demos from clusters A and B. Write in the future tense naming ONE concrete first deliverable drawn from the tailoring changes and, where the cluster label gives one, the planned demo, and offer to show a first version. Keep the structure.
 10. Include at least one concrete detail taken from the text above, in the conclusion line or the first reason: a named customer, a product feature or a short phrase from the company's own site.
-11. The last line must be exactly: Loom: {pitch.LOOM} Repo: {pitch.REPO}"""
+11. Do not give dates, deadlines or time commitments (no "next week", "by Friday", "within 48 hours"). An offer to show a first version carries no date.
+12. The last line must be exactly: Loom: {pitch.LOOM} Repo: {pitch.REPO}"""
+
+
+# The fact sheet of each built demo, keyed by cluster. Other clusters have no built demo, so they get no facts.
+DEMO_FACTS_BY_CLUSTER={"A": DEMO_FACTS_A, "B": DEMO_FACTS_B}
+
+
+def guard_violations(company, site):
+    """Run the pitch guard on the note, with the facts of the demo the chosen cluster describes.
+
+    The demo facts are the author's own, so numbers and names in them are legitimate to quote.
+    A copy of the site dict is used so the original is never changed.
+    """
+    guard_site={**site, "demo_facts": DEMO_FACTS_BY_CLUSTER.get(company.cluster)}
+    return pitch.pitch_violations(company.pitch_note, guard_site)
 
 
 def junk_error(company, missing):
@@ -320,7 +335,7 @@ def enrich(url):
     if missing:
         return result(name, error=junk_error(company, missing), site=site)
 
-    violations=pitch.pitch_violations(company.pitch_note, site)
+    violations=guard_violations(company, site)
     retry_problem=None
     if violations:
         print(f"Pitch note rejected, asking once more: {violations}")
@@ -336,7 +351,7 @@ def enrich(url):
             retry_problem="the retry answered with placeholder fields"
         else:
             company, model=retry_company, retry_model
-            violations=pitch.pitch_violations(company.pitch_note, site)
+            violations=guard_violations(company, site)
             if violations:
                 retry_problem="the retry was rejected too"
 
