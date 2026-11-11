@@ -145,11 +145,15 @@ def check_pitch_note(note):
 def build_corpus(site):
     """Join the scraped text a note may legitimately name.
 
-    Uses the site dict keys title, description, about, fde_roles (a list of
-    matched role phrases, may be missing), name, and the host of url. Missing
-    or None values are skipped, so old site dicts still work.
+    Uses the site dict keys title, description, about, customers (the customers
+    page text, a string or None), fde_roles (a list of matched role phrases, may
+    be missing), name, and the host of url. Missing, None and non string values
+    are skipped, so old site dicts still work.
     """
     parts = [site.get("title"), site.get("description"), site.get("about"), site.get("name")]
+    customers = site.get("customers")
+    if isinstance(customers, str):
+        parts.append(customers)
     parts.extend(site.get("fde_roles") or [])
     url = site.get("url")
     if url:

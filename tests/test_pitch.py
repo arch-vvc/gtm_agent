@@ -318,6 +318,41 @@ def test_corpus_copes_with_missing_keys():
     assert pitch.build_corpus({"name": "Nameco", "fde_roles": None, "about": None}).strip() == "Nameco"
 
 
+CUSTOMERS_NOTE = "Teams at Atlassian use it.\nLoom: [LOOM_URL] Repo: [REPO_URL]"
+
+
+def test_customers_text_grounds_a_name_in_the_note():
+    site = {"name": "Goodco", "customers": "Atlassian and Stripe use us"}
+    assert pitch.pitch_violations(CUSTOMERS_NOTE, site) == []
+
+
+def test_name_from_the_customers_page_is_flagged_without_the_customers_key():
+    site = {"name": "Goodco"}
+    violations = pitch.pitch_violations(CUSTOMERS_NOTE, site)
+    assert any("Atlassian" in v for v in violations)
+
+
+@pytest.mark.parametrize("customers", [None, "", 5, ["Atlassian"]])
+def test_customers_none_or_non_string_does_not_crash(customers):
+    site = {"name": "Goodco", "customers": customers}
+    assert pitch.build_corpus(site).strip() == "Goodco"
+    assert any("Atlassian" in v for v in pitch.pitch_violations(CUSTOMERS_NOTE, site))
+
+
+def test_name_found_nowhere_is_still_flagged_with_customers_present():
+    site = {"name": "Goodco", "customers": "Atlassian and Stripe use us"}
+    note = "Teams at Zzyzx use it.\nLoom: [LOOM_URL] Repo: [REPO_URL]"
+    violations = pitch.pitch_violations(note, site)
+    assert any("Zzyzx" in v for v in violations)
+    assert not any("Atlassian" in v for v in violations)
+
+
+def test_corpus_customers_text_can_ground_a_camel_case_name():
+    corpus = pitch.build_corpus({"name": "Goodco", "customers": "Trusted by InvoiceGPT and others"})
+    assert "InvoiceGPT" in corpus
+    assert pitch.ungrounded_names("We admire InvoiceGPT.", corpus) == []
+
+
 def test_pitch_violations_combines_style_and_grounding():
     violations = pitch.pitch_violations("Hello Zzyzx there.", SITE)
     assert any("Zzyzx" in v for v in violations)
