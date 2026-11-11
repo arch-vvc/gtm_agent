@@ -42,7 +42,11 @@ NEW_COLUMNS = {
     "pitch_error": "text",
     "careers_url": "text",
     "hiring_fde": "boolean",
+    "domain": "text",
 }
+
+# Lookup indexes the worker relies on to find duplicates.
+NEW_INDEXES = ["companies_domain_idx", "companies_name_idx"]
 
 
 def check(conn):
@@ -71,7 +75,7 @@ def check(conn):
     names = ", ".join(NEW_COLUMNS)
     row = conn.execute(f"SELECT {names} FROM companies").fetchone()
     assert all(value is None for value in row), f"new columns not NULL: {row}"
-    print("all nine new columns are NULL on the old row")
+    print(f"all {len(NEW_COLUMNS)} new columns are NULL on the old row")
 
     found = dict(
         conn.execute(
@@ -84,7 +88,18 @@ def check(conn):
         assert found.get(column) == data_type, (
             f"column {column}: expected {data_type}, got {found.get(column)}"
         )
-    print("all nine new columns exist with the right types")
+    print(f"all {len(NEW_COLUMNS)} new columns exist with the right types")
+
+    indexes = {
+        name
+        for (name,) in conn.execute(
+            "SELECT indexname FROM pg_indexes WHERE schemaname = %s AND tablename = 'companies'",
+            (CHECK_SCHEMA,),
+        ).fetchall()
+    }
+    for index in NEW_INDEXES:
+        assert index in indexes, f"index {index} is missing, found {sorted(indexes)}"
+    print("both lookup indexes exist")
 
 
 def main():

@@ -23,10 +23,11 @@ def save(url, result):
     company=result["company"]
     with psycopg.connect(DB_URL) as conn:
         row=conn.execute(
-            "INSERT INTO companies (url, name, industry, what_they_sell, target_customer, model, error, cluster, cluster_reason, demo, customer_pain, tailoring, pitch_note, pitch_error, careers_url, hiring_fde) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (url) DO NOTHING RETURNING id",
+            "INSERT INTO companies (url, name, domain, industry, what_they_sell, target_customer, model, error, cluster, cluster_reason, demo, customer_pain, tailoring, pitch_note, pitch_error, careers_url, hiring_fde) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (url) DO NOTHING RETURNING id",
             (
                 url,
                 result["name"],
+                result.get("domain"),
                 company.industry if company else None,
                 company.what_they_sell if company else None,
                 company.target_customer if company else None,
@@ -58,6 +59,28 @@ def find_company(url):
     return row[0] if row else None
 
 
+def find_duplicate(domain, name):
+    """Return (company_id, matched_by) for a saved company with the same domain or name, else None.
+
+    matched_by is "domain" or "name". A domain match wins over a name match,
+    then the lowest id. An empty domain or name never matches anything.
+    """
+    domain=(domain or "").strip() or None
+    name=(name or "").strip() or None
+    if domain is None and name is None:
+        return None
+    with psycopg.connect(DB_URL) as conn:
+        row=conn.execute(
+            "SELECT id, COALESCE(lower(domain) = lower(%s::text), false) FROM companies "
+            "WHERE lower(domain) = lower(%s::text) OR lower(name) = lower(%s::text) "
+            "ORDER BY 2 DESC, id LIMIT 1",
+            (domain, domain, name),
+        ).fetchone()
+    if row is None:
+        return None
+    return row[0], "domain" if row[1] else "name"
+
+
 def main():
     for stuck_key in r.scan_iter(match="job:*"):
         if r.hget(stuck_key, "status") == "running":
@@ -85,6 +108,13 @@ def main():
             if result.get("error"):
                 finish(key, {"status": "failed", "error": result["error"]})
                 print(f"Failed {job_id}: {result['error']}")
+                continue
+            duplicate=find_duplicate(result.get("domain"), result.get("name"))
+            if duplicate:
+                duplicate_id, matched_by=duplicate
+                finish(key, {"status": "done", "company_id": duplicate_id, "duplicate_of": duplicate_id, "matched_by": matched_by})
+                what="final domain" if matched_by == "domain" else "name"
+                print(f"Skipped {job_id}, {url} was treated as a duplicate of company {duplicate_id} because of its {what}")
                 continue
             company_id=save(url, result)
             finish(key, {"status": "done", "company_id": company_id})

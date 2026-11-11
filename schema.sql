@@ -19,3 +19,7 @@ ALTER TABLE companies ADD COLUMN IF NOT EXISTS pitch_note TEXT;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS pitch_error TEXT;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS careers_url TEXT;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS hiring_fde BOOLEAN;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS domain TEXT;
+
+CREATE INDEX IF NOT EXISTS companies_domain_idx ON companies (lower(domain));
+CREATE INDEX IF NOT EXISTS companies_name_idx ON companies (lower(name));
