@@ -4,7 +4,7 @@ gtm_agent is a pitch engine for forward deployed engineer (FDE) outreach. You gi
 
 ## Status
 
-- **Verified:** the test suite (566 tests, all model calls mocked), the migration check against Postgres 16, and an end to end run against real Postgres and Redis with a faked scraper and a faked model.
+- **Verified:** the test suite (576 tests, all model calls mocked), the migration check against Postgres 16, and an end to end run against real Postgres and Redis with a faked scraper and a faked model.
 - **Latest live run (author's machine, real Gemini and Groq):** Peakflo (cluster B) and Cekura (cluster A) were enriched. Simular failed: two Gemini models returned 503 "high demand" (a capacity error on Google's side), a third was cooling down, and the Groq `openai/gpt-oss-20b` model answered `UNKNOWN` for industry. The junk check then failed the job without trying the second Groq model, `openai/gpt-oss-120b`.
 - **Problem seen in that run, fixed and NOT yet re-run live:** Cekura's note claimed past work ("I adapted the simulation engine") that the demo fact sheet does not support. The guard checks names and figures, not claims. Two fixes are covered by mocked tests: a junk answer now counts as a failed attempt and falls through to the next model, and a deterministic check rejects first person past tense work claims other than "I built" and rejects "I built" for clusters with no demo built, so the retry prompt names the problem.
 - **Earlier problems, fixed and NOT yet re-run live:** two first drafts were rejected by the guard because it did not accept figures from the author's own demo fact sheet, and one note invented a deadline. Both are covered by mocked tests.
