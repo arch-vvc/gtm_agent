@@ -273,21 +273,20 @@ cluster_reason: one sentence that quotes the site's own words.
 customer_pain: one sentence, grounded in the text, about the deployment pain the company's customers have.
 tailoring: exactly 3 changes to make to a demo for this company, covering sample data, persona names and terminology.
 
-pitch_note: a short note to the company's founder or FDE lead. It is written by an engineer who has built a working demo and wants a conversation about a forward deployed engineer or solutions engineering role. These are the demos that exist:
+pitch_note: a short note to the company's founder or FDE lead. It is written by an engineer who has built exactly two demos, A and B, listed below, and wants a conversation about a forward deployed engineer or solutions engineering role. The two demos:
 {BUILT_DEMOS}
 Rules for pitch_note:
-1. Write in the first person singular ("I built", "I would adapt"). Never speak as a vendor: never say "our product" or "our workflow", and never tell the company to "adopt" or "buy" anything.
-2. Present the demo as something I built to show how I would work on this company's customers' deployment problems, adapted to their world using the tailoring changes. If the company already sells the same kind of product as the demo, say the demo was built to understand that problem space and show how it would be adapted, not that the company needs it.
-3. Structure: the first line is the conclusion in one sentence (what I built and why it matters for this company's customers), then a blank line, then 2 or 3 short reasons, each on a new line starting with First, Second and Third (plain words, no list markers), then a blank line, then the last line exactly as below.
+1. Write in the first person singular, for example "I built ..." for clusters A and B or "I would build ..." for the others. Never speak as a vendor: never say "our product" or "our workflow", and never tell the company to "adopt" or "buy".
+2. If you choose cluster A or B, present the demo as something I built to show how I would work on this company's customers' deployment problems, adapted using the tailoring changes. If the company already sells the same kind of product, say the demo was built to understand that problem space, not that the company needs it.
+3. Structure: the first line is the conclusion in one sentence (what I built (clusters A and B) or would build (the other clusters) and why it matters to this company's customers), then a blank line, then short reasons, each on a new line starting with First, Second and Third (no list markers), then a blank line, then the last line exactly as below. Clusters A and B keep 2 or 3 reasons. For clusters C to G write exactly two reasons, First and Second, and offer to show a first version inside the second reason.
 4. At most 150 words, in British English.
 5. No hyphens or dashes of any kind.
-6. No flattery or hype words such as perfectly, excited, love, passionate, game changing.
-7. Name only products and customers that appear in the text above. Do not invent numbers.
-8. Never name the demo repos. Describe the demo in plain words instead.
-9. Describe the demo ONLY with the facts above. Do not claim integrations, metrics (such as DSO or cash flow impact), interfaces, data sources, file formats or features that are not listed. You may say how you WOULD adapt it to this company, in the future tense, using the tailoring changes.
-10. If you choose a cluster whose demo is "none built" (C, D, E, F or G), this rule replaces rule 2: do not say or imply that a demo was built, and do not mention or describe the demos from clusters A and B. Write in the future tense ("I would build ...") naming ONE concrete first deliverable drawn from the tailoring changes and, where the cluster label gives one, the planned demo, and offer to show a first version. Keep the same structure and last line.
-11. Include at least one concrete detail taken from the text above, in the conclusion line or the first reason: a named customer, a product feature or a short phrase from the company's own site. A generic phrase such as "high volume workflows" is not a detail.
-12. The last line must be exactly: Loom: {pitch.LOOM} Repo: {pitch.REPO}"""
+6. No flattery or hype words such as perfectly, excited, love, passionate.
+7. Name only products and customers that appear in the text above. No invented numbers.
+8. Describe a demo ONLY with the facts above. Do not claim integrations, metrics, interfaces, data sources, file formats or features that are not listed. You may say how you WOULD adapt it, in the future tense, using the tailoring changes.
+9. If you choose cluster C, D, E, F or G (the labels that say not built yet, no demo built yet or no default demo), this rule overrides rules 1 to 3 on the demo: do not say or imply that a demo was built, and do not mention or describe the demos from clusters A and B. Write in the future tense naming ONE concrete first deliverable drawn from the tailoring changes and, where the cluster label gives one, the planned demo, and offer to show a first version. Keep the structure.
+10. Include at least one concrete detail taken from the text above, in the conclusion line or the first reason: a named customer, a product feature or a short phrase from the company's own site.
+11. The last line must be exactly: Loom: {pitch.LOOM} Repo: {pitch.REPO}"""
 
 
 def junk_error(company, missing):
