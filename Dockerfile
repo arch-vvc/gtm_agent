@@ -4,5 +4,6 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --no-install-project --no-dev
-COPY main.py scrape.py enrich.py worker.py schema.sql ./
+COPY main.py scrape.py enrich.py pitch.py worker.py schema.sql ./
+COPY scripts ./scripts
 CMD ["/app/.venv/bin/uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
