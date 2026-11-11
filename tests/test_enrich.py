@@ -9,10 +9,16 @@ SITE = {
     "about": "Millions of companies use Stripe to accept payments.",
     "error": None,
 }
+NOTE = "Stripe processes payments for online businesses, so a payments demo fits.\n\nLoom: [LOOM_URL] Repo: [REPO_URL]"
 COMPANY = Company(
     industry="Fintech",
     what_they_sell="Payment processing APIs",
     target_customer="Online businesses",
+    cluster="F",
+    cluster_reason='The site says "accept payments".',
+    customer_pain="Online businesses need to accept payments reliably.",
+    tailoring=["Use card payment sample data", "Name personas after merchants", "Say payouts not settlements"],
+    pitch_note=NOTE,
 )
 
 
@@ -28,7 +34,17 @@ def test_enrich_returns_company_from_mocked_scraper_and_llm(monkeypatch):
 
     out = enrich.enrich("stripe.com")
 
-    assert out == {"name": "Stripe", "company": COMPANY, "model": "fake-model", "error": None}
+    assert out == {
+        "name": "Stripe",
+        "company": COMPANY,
+        "model": "fake-model",
+        "error": None,
+        "demo": "none built",
+        "pitch_note": NOTE,
+        "pitch_error": None,
+        "careers_url": None,
+        "hiring_fde": None,
+    }
     assert "Online payment processing" in prompts[0]
     assert "Millions of companies" in prompts[0]
 
