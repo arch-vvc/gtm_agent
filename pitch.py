@@ -45,6 +45,16 @@ ALLOWED_WORDS = frozenset(
     {
         # sentence starters and pronouns
         "the", "we", "i", "you", "your", "this", "their", "our", "it", "hi", "thanks",
+        # sentence openers and connectives that are never product or customer names
+        "first", "firstly", "second", "secondly", "third", "thirdly", "finally", "lastly",
+        "next", "then", "also", "additionally", "moreover", "however", "therefore",
+        "overall", "together", "today", "because", "since", "although", "while", "when",
+        "if", "and", "but", "so", "or", "yet", "with", "without", "for", "from", "in",
+        "on", "at", "by", "to", "of", "as", "a", "an", "that", "these", "those", "some",
+        "many", "most", "each", "every", "one", "two", "three", "here", "there", "they",
+        "he", "she",
+        # greetings and sign offs
+        "please", "best", "regards", "kind", "dear", "hello",
         # months
         "january", "february", "march", "april", "may", "june", "july",
         "august", "september", "october", "november", "december",

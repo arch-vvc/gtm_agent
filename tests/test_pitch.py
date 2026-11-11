@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 import pitch
@@ -167,6 +169,80 @@ def test_tally_rejected_without_corpus_support_and_accepted_with_it():
     with_tally = {"name": "Acme", "description": "Invoices from Tally for finance teams."}
     assert any("Tally" in v for v in pitch.pitch_violations(note, without))
     assert pitch.pitch_violations(note, with_tally) == []
+
+
+GOODCO_SITE = {
+    "name": "Goodco",
+    "description": "Goodco handles invoices and purchase orders. We are hiring a forward deployed engineer.",
+}
+
+
+def test_sentence_openers_do_not_trigger_the_guard():
+    note = (
+        "First, Goodco matches invoices, purchase orders and payments for finance teams.\n"
+        "Second, Goodco is hiring a forward deployed engineer, so deployment is a real focus.\n"
+        "Loom: [LOOM_URL] Repo: [REPO_URL]"
+    )
+    assert pitch.pitch_violations(note, GOODCO_SITE) == []
+
+
+def test_connectives_do_not_trigger_the_guard():
+    note = (
+        "Finally, Goodco matches invoices. However, purchase orders still drift.\n"
+        "Overall, a forward deployed engineer helps. Also, payments follow.\n"
+        "Loom: [LOOM_URL] Repo: [REPO_URL]"
+    )
+    assert pitch.pitch_violations(note, GOODCO_SITE) == []
+
+
+def test_invented_sentence_initial_product_is_still_flagged():
+    note = "Acme integrates well with your stack.\nLoom: [LOOM_URL] Repo: [REPO_URL]"
+    violations = pitch.pitch_violations(note, GOODCO_SITE)
+    assert any("Acme" in v for v in violations)
+
+
+def test_opener_does_not_hide_an_invented_name_after_it():
+    note = "First, Acme integrates well.\nLoom: [LOOM_URL] Repo: [REPO_URL]"
+    assert pitch.ungrounded_names(note, "Goodco invoices") == ["Acme"]
+
+
+def test_invented_product_and_mid_sentence_name_still_flagged_with_openers():
+    note = "However, InvoiceGPT works. Goodco also pairs with Zorblax.\nLoom: [LOOM_URL] Repo: [REPO_URL]"
+    assert pitch.ungrounded_names(note, "Goodco invoices") == ["InvoiceGPT", "Zorblax"]
+
+
+def test_invented_figure_and_digit_token_still_flagged_with_openers():
+    assert pitch.ungrounded_names("Overall, 40 teams and G2B help.", "") == ["40", "G2B"]
+
+
+def test_tally_still_flagged_after_widening():
+    note = "Also, finance teams export from Tally.\nLoom: [LOOM_URL] Repo: [REPO_URL]"
+    assert any("Tally" in v for v in pitch.pitch_violations(note, GOODCO_SITE))
+
+
+def test_allowlist_matching_is_case_insensitive():
+    assert pitch.ungrounded_names("FIRST, then HOWEVER and Finally.", "") == []
+
+
+NEW_ALLOWED_WORDS = [
+    "First", "Firstly", "Second", "Secondly", "Third", "Thirdly", "Finally", "Lastly",
+    "Next", "Then", "Also", "Additionally", "Moreover", "However", "Therefore",
+    "Overall", "Together", "Today", "Because", "Since", "Although", "While", "When",
+    "If", "And", "But", "So", "Or", "Yet", "With", "Without", "For", "From", "In",
+    "On", "At", "By", "To", "Of", "As", "A", "An", "That", "These", "Those", "Some",
+    "Many", "Most", "Each", "Every", "One", "Two", "Three", "Here", "There", "They",
+    "He", "She", "Please", "Best", "Regards", "Kind", "Dear", "Hello",
+]  # fmt: skip
+
+
+@pytest.mark.parametrize("word", NEW_ALLOWED_WORDS)
+def test_new_allowed_words_are_present(word):
+    assert word.lower() in pitch.ALLOWED_WORDS
+
+
+def test_every_allowed_word_is_one_plain_lower_case_word():
+    for word in pitch.ALLOWED_WORDS:
+        assert re.fullmatch(r"[a-z]+", word), word
 
 
 def test_corpus_uses_all_documented_site_keys():
