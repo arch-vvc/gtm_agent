@@ -128,11 +128,18 @@ When the home page links to a customers page (`/customers`, `/case-studies`, `/u
 The same company used to be saved twice, for example `notion.com` and `notion.so` (which redirects to `notion.com`). Now, after the model has answered and before anything is saved, the worker looks for an existing row that matches either way:
 
 - **Final domain.** The host the site ends up on after redirects, lowercased, with `www.` removed. It is stored in the new `domain` column.
-- **Name, ignoring case.** The name is the first label of the input host (`notion.so` gives `Notion`).
+- **Name, ignoring case.** The name is the main domain label of the input host, so subdomains are fine: `notion.so` gives `Notion`, `blog.stripe.com` gives `Stripe`, `shop.example.co.uk` gives `Example`.
 
 If a row matches, the job finishes as `done` with that row's `company_id`, plus `duplicate_of` and `matched_by` (`domain` or `name`), and no new row is written. A domain match is preferred over a name match, then the lowest id. The worker log says which company the URL was treated as a duplicate of and why. A job that failed is never treated as a duplicate.
 
-Honest limit: a name match can wrongly merge two different companies that share the first label of their host, such as `apple.com` and `apple.fr`, or two unrelated companies that both start with the same word. If that matters to you, check the `matched_by` field and look at `duplicate_of`.
+Honest limits:
+
+- Two different companies on different TLDs that share a main label, such as `apple.com` and `apple.fr`, are treated as one company.
+- Hosting platforms collapse, because a URL with a path dedupes on the domain: `github.com/openai` and `github.com/anthropic` count as the same company, and so do paths on `linkedin.com` or `medium.com`.
+- The enrich call (and its LLM cost) runs before the duplicate check, so a duplicate still costs one model call.
+- Rows saved before this change keep the name they were saved with, which could be a subdomain label such as `Blog`.
+
+If this matters to you, check the `matched_by` field and look at `duplicate_of`.
 
 The `domain` column is added by `schema.sql` when the API starts (`ADD COLUMN IF NOT EXISTS`, nullable), so an existing database upgrades in place. Rows saved before this change have no domain until they are enriched again, so the cleanup below can only match them by name.
 
@@ -151,7 +158,7 @@ Group 1 (matched by name 'notion'): keep id 3 https://notion.com, merge id 7 htt
 DRY RUN. Nothing was changed. Re-run with --apply to merge 1 rows.
 ```
 
-Add `--apply` to change anything. It deletes the duplicate rows and keeps one per group, in a single transaction that rolls back on any error. Back up the database first. Without `DB_URL` it stops with an error.
+Add `--apply` to change anything. It deletes the duplicate rows and keeps one per group, in a single transaction that rolls back on any error. Back up the database first. Without `DB_URL` it stops with an error. It is not locked against a worker inserting at the same moment, so run it when the worker is idle.
 
 ## How the Gemini to Groq fallback works
 

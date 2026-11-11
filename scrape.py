@@ -26,6 +26,26 @@ def host_of(url):
     return (urlparse(url).hostname or "").lower().removeprefix("www.")
 
 
+SECOND_LEVEL_LABELS={"co", "com", "org", "net", "gov", "edu", "ac"}
+IPV4_PATTERN=re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
+
+
+def name_from_host(host):
+    """Company name from the main domain label, so blog.stripe.com and stripe.com both give Stripe.
+
+    Handles two part suffixes like co.uk (shop.example.co.uk gives Example).
+    A single label host or an IP address keeps the whole host.
+    """
+    host=host.lower().removeprefix("www.")
+    labels=host.split(".")
+    if len(labels) < 2 or IPV4_PATTERN.match(host):
+        return host.capitalize()
+    index=-2
+    if len(labels) >= 3 and len(labels[-1]) == 2 and labels[-2] in SECOND_LEVEL_LABELS:
+        index=-3
+    return labels[index].capitalize()
+
+
 def find_about_url(soup, base_url):
     for link in soup.find_all("a", href=True):
         href=link["href"].lower()
@@ -137,7 +157,7 @@ def get_customers_text(customers_url):
 def get_description(url):
     url=normalise_url(url)
 
-    name=urlparse(url).netloc.removeprefix("www.").split(".")[0].capitalize()
+    name=name_from_host(urlparse(url).hostname or "")
     input_domain=host_of(url)
 
     try:

@@ -291,3 +291,34 @@ def test_find_duplicate_never_matches_on_empty_values(monkeypatch, domain, name)
     assert worker.find_duplicate(domain, name) is None
 
     assert conn.calls == []
+
+
+def test_subdomains_of_different_companies_no_longer_match_by_name(monkeypatch):
+    # Both hosts used to be named "Blog". The names now differ, so the name lookup cannot join them.
+    import scrape
+
+    stripe = scrape.name_from_host("blog.stripe.com")
+    vercel = scrape.name_from_host("blog.vercel.com")
+    assert stripe != vercel
+
+    # The fake table holds only the saved blog.stripe.com row, which matches on lower(name).
+    saved = {"domain": "blog.stripe.com", "name": stripe.lower()}
+
+    def lookup(sql, params):
+        domain, _, name = params
+        if domain and domain.lower() == saved["domain"]:
+            return (1, True)
+        if name and name.lower() == saved["name"]:
+            return (1, False)
+        return None
+
+    class LookupConnection(FakeConnection):
+        def execute(self, sql, params=()):
+            self.calls.append((sql, params))
+            return FakeCursor(lookup(sql, params))
+
+    conn = LookupConnection([])
+    monkeypatch.setattr(worker.psycopg, "connect", lambda *args, **kwargs: conn)
+
+    assert worker.find_duplicate("blog.stripe.com", stripe) == (1, "domain")
+    assert worker.find_duplicate("blog.vercel.com", vercel) is None
