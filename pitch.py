@@ -146,7 +146,8 @@ def build_corpus(site):
     """Join the scraped text a note may legitimately name.
 
     Uses the site dict keys title, description, about, customers (the customers
-    page text, a string or None), fde_roles (a list of matched role phrases, may
+    page text, a string or None), demo_facts (the fact sheet of the demo the note
+    describes, a string or None), fde_roles (a list of matched role phrases, may
     be missing), name, and the host of url. Missing, None and non string values
     are skipped, so old site dicts still work.
     """
@@ -154,6 +155,9 @@ def build_corpus(site):
     customers = site.get("customers")
     if isinstance(customers, str):
         parts.append(customers)
+    demo_facts = site.get("demo_facts")
+    if isinstance(demo_facts, str):
+        parts.append(demo_facts)
     parts.extend(site.get("fde_roles") or [])
     url = site.get("url")
     if url:

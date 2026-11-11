@@ -1,4 +1,5 @@
 import json
+import re
 from types import SimpleNamespace
 
 import pytest
@@ -722,8 +723,8 @@ def test_prompt_pitch_instructions_stay_compact():
     prompt = enrich.build_prompt(AP_SITE)
     pitch_part = prompt[prompt.index("pitch_note:") :]
 
-    # Measured at 579 words after the cluster C to G fix; 590 leaves a small margin and still keeps the section short.
-    assert len(pitch_part.split()) < 590
+    # Measured at 608 words after the no deadlines rule; 620 leaves a small margin and still keeps the section short.
+    assert len(pitch_part.split()) < 620
 
 
 def test_prompt_still_has_the_fence_unknown_and_cluster_g_rules():
@@ -739,7 +740,7 @@ def new_rules_text(prompt):
     start = prompt.index("A: voice agent call QA takes")
     end = prompt.index("Rules for pitch_note:")
     rules_start = prompt.index("8. Describe a demo ONLY")
-    rules_end = prompt.index("11. The last line")
+    rules_end = prompt.index("11. Do not give dates")
     return prompt[start:end] + prompt[rules_start:rules_end]
 
 
@@ -812,3 +813,115 @@ def test_retry_prompt_still_builds_on_the_prompt_with_the_new_rules(monkeypatch)
     assert prompts[1].startswith(prompts[0])
     assert "Describe a demo ONLY with the facts above" in prompts[1]
     assert "Your previous pitch_note was rejected for" in prompts[1]
+
+
+def test_prompt_has_the_no_deadlines_rule_and_consistent_numbering():
+    prompt = enrich.build_prompt(AP_SITE)
+
+    assert (
+        '11. Do not give dates, deadlines or time commitments (no "next week", "by Friday", "within 48 hours"). '
+        "An offer to show a first version carries no date."
+    ) in prompt
+    rules = prompt[prompt.index("Rules for pitch_note:") :]
+    numbers = [int(number) for number in re.findall(r"^(\d+)\. ", rules, re.MULTILINE)]
+    assert numbers == list(range(1, 13))
+    assert "12. The last line must be exactly" in prompt
+
+
+# The fact sheet figure below comes from DEMO_FACTS_A, the author's own demo fact sheet.
+FACT_NOTE_A = """I built a voice agent call QA demo with about 20 simulated callers including Hinglish and adversarial callers, so Echobench can test every release.
+
+First, the site says Echobench runs simulated callers against every release.
+Second, I would adapt the personas to your clients.
+
+Loom: [LOOM_URL] Repo: [REPO_URL]"""
+
+FACT_NOTE_B = """I built an invoice triage demo that reads Tally and Zoho exports for Ledgerly.
+
+First, the site says Ledgerly automates accounts payable for finance teams.
+Second, I would adapt the sample data to your customers.
+
+Loom: [LOOM_URL] Repo: [REPO_URL]"""
+
+
+def test_demo_facts_for_a_make_the_fact_sheet_figure_legitimate_in_the_real_guard():
+    without = pitch.pitch_violations(FACT_NOTE_A, VOICE_SITE)
+    with_facts = pitch.pitch_violations(FACT_NOTE_A, {**VOICE_SITE, "demo_facts": enrich.DEMO_FACTS_A})
+
+    assert any("names not found on the site" in line for line in without)
+    assert with_facts == []
+
+
+def test_enrich_accepts_a_cluster_a_note_quoting_the_fact_sheet_on_the_first_ask(monkeypatch):
+    use_site(monkeypatch, VOICE_SITE)
+    prompts = script_ask(monkeypatch, [(make_company("A", FACT_NOTE_A), "first-model")])
+
+    out = enrich.enrich("echobench.example")
+
+    assert len(prompts) == 1
+    assert out["pitch_note"] == FACT_NOTE_A
+    assert out["pitch_error"] is None
+
+
+def test_enrich_still_rejects_the_same_note_under_cluster_g(monkeypatch):
+    use_site(monkeypatch, VOICE_SITE)
+    prompts = script_ask(
+        monkeypatch,
+        [(make_company("G", FACT_NOTE_A), "first-model"), (make_company("G", FACT_NOTE_A), "second-model")],
+    )
+
+    out = enrich.enrich("echobench.example")
+
+    assert len(prompts) == 2
+    assert out["pitch_note"] is None
+    assert "20" in out["pitch_error"]
+
+
+def test_retry_uses_the_demo_facts_of_the_retry_cluster(monkeypatch):
+    use_site(monkeypatch, VOICE_SITE)
+    prompts = script_ask(
+        monkeypatch,
+        [(make_company("G", FACT_NOTE_A), "first-model"), (make_company("A", FACT_NOTE_A), "second-model")],
+    )
+
+    out = enrich.enrich("echobench.example")
+
+    assert len(prompts) == 2
+    assert out["pitch_note"] == FACT_NOTE_A
+    assert out["pitch_error"] is None
+
+
+def test_cluster_b_note_may_quote_tally_and_zoho_because_the_b_fact_sheet_has_them(monkeypatch):
+    site = {**AP_SITE, "description": "Ledgerly automates accounts payable for finance teams."}
+    use_site(monkeypatch, site)
+    script_ask(monkeypatch, [(make_company("B", FACT_NOTE_B), "first-model")])
+
+    out = enrich.enrich("ledgerly.example")
+
+    assert out["pitch_error"] is None
+    assert out["pitch_note"] == FACT_NOTE_B
+
+
+def test_cluster_a_note_naming_tally_is_still_flagged():
+    site = {**VOICE_SITE, "demo_facts": enrich.DEMO_FACTS_A}
+
+    assert any("Tally" in line for line in pitch.pitch_violations(FACT_NOTE_B, site))
+
+
+def test_enrich_does_not_mutate_the_original_site_dict(monkeypatch):
+    site = dict(VOICE_SITE)
+    use_site(monkeypatch, site)
+    script_ask(monkeypatch, [(make_company("A", FACT_NOTE_A), "first-model")])
+
+    enrich.enrich("echobench.example")
+
+    assert site == VOICE_SITE
+    assert "demo_facts" not in site
+
+
+@pytest.mark.parametrize("value", [None, "", 5, ["a list"]])
+def test_build_corpus_tolerates_odd_demo_facts_values(value):
+    corpus = pitch.build_corpus({**VOICE_SITE, "demo_facts": value})
+
+    assert "Echobench" in corpus
+    assert "a list" not in corpus
