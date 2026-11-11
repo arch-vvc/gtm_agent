@@ -1,3 +1,9 @@
+from types import SimpleNamespace
+
+import httpx
+import pytest
+from google.genai import errors
+
 import enrich
 from enrich import Company
 
@@ -323,3 +329,159 @@ def test_enrich_error_result_still_carries_the_domain(monkeypatch):
 
     assert out["error"] == "Could not reach site"
     assert out["domain"] == "notion.so"
+
+
+class FakeRedis:
+    """Just enough of redis for the cooldown code: exists and set, recording the ttl."""
+
+    def __init__(self):
+        self.keys = {}
+
+    def exists(self, key):
+        return key in self.keys
+
+    def set(self, key, value, ex=None):
+        self.keys[key] = ex
+
+
+class FakeGemini:
+    """Stands in for gemini_client. Each model either answers or raises what outcomes says."""
+
+    def __init__(self, outcomes):
+        self.outcomes = outcomes
+        self.calls = []
+        self.models = self
+
+    def generate_content(self, model, contents, config):
+        self.calls.append(model)
+        outcome = self.outcomes[model]
+        if isinstance(outcome, Exception):
+            raise outcome
+        return SimpleNamespace(parsed=outcome)
+
+
+def client_error(code, status="SOME_STATUS"):
+    return errors.ClientError(code, {"error": {"code": code, "message": f"synthetic {code}", "status": status}})
+
+
+def fake_groq_client(company):
+    calls = []
+
+    def create(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=company.model_dump_json()))])
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    client.calls = calls
+    return client
+
+
+def use_fakes(monkeypatch, outcomes):
+    fake_redis = FakeRedis()
+    gemini = FakeGemini(outcomes)
+    monkeypatch.setattr(enrich, "r", fake_redis)
+    monkeypatch.setattr(enrich, "gemini_client", gemini)
+    return fake_redis, gemini
+
+
+FIRST, SECOND, THIRD = enrich.GEMINI_MODELS
+
+
+def test_rate_limit_cools_the_model_down_and_tries_the_next_one(monkeypatch):
+    fake_redis, gemini = use_fakes(monkeypatch, {FIRST: client_error(429), SECOND: COMPANY, THIRD: COMPANY})
+
+    assert enrich.ask_gemini("prompt") == (COMPANY, SECOND)
+    assert gemini.calls == [FIRST, SECOND]
+    assert fake_redis.keys == {f"cooldown:{FIRST}": enrich.COOLDOWN_SECONDS}
+
+
+def test_rate_limit_on_every_gemini_model_falls_through_to_groq(monkeypatch):
+    outcomes = {model: client_error(429) for model in enrich.GEMINI_MODELS}
+    fake_redis, gemini = use_fakes(monkeypatch, outcomes)
+    groq = fake_groq_client(COMPANY)
+    monkeypatch.setattr(enrich, "groq_client", groq)
+
+    assert enrich.ask("prompt") == (COMPANY, enrich.GROQ_MODEL)
+    assert gemini.calls == enrich.GEMINI_MODELS
+    assert fake_redis.keys == {f"cooldown:{model}": enrich.COOLDOWN_SECONDS for model in enrich.GEMINI_MODELS}
+    assert len(groq.calls) == 1
+
+
+def test_model_not_found_gets_a_long_cooldown_and_the_next_model_is_tried(monkeypatch):
+    fake_redis, gemini = use_fakes(monkeypatch, {FIRST: client_error(404, "NOT_FOUND"), SECOND: COMPANY, THIRD: COMPANY})
+
+    assert enrich.ask_gemini("prompt") == (COMPANY, SECOND)
+    assert gemini.calls == [FIRST, SECOND]
+    assert fake_redis.keys == {f"cooldown:{FIRST}": enrich.NOT_FOUND_COOLDOWN_SECONDS}
+    assert enrich.NOT_FOUND_COOLDOWN_SECONDS == 3600
+
+
+def test_model_not_found_message_names_the_model(monkeypatch, capsys):
+    use_fakes(monkeypatch, {FIRST: client_error(404, "NOT_FOUND"), SECOND: COMPANY, THIRD: COMPANY})
+
+    enrich.ask_gemini("prompt")
+
+    assert f"{FIRST} was not found" in capsys.readouterr().out
+
+
+def test_bad_request_and_permission_errors_do_not_cool_the_model_down(monkeypatch):
+    for code in (400, 401, 403):
+        fake_redis, gemini = use_fakes(monkeypatch, {FIRST: client_error(code), SECOND: COMPANY, THIRD: COMPANY})
+
+        assert enrich.ask_gemini("prompt") == (COMPANY, SECOND), code
+        assert gemini.calls == [FIRST, SECOND], code
+        assert fake_redis.keys == {}, code
+
+
+def test_bad_key_on_every_gemini_model_still_reaches_groq(monkeypatch):
+    use_fakes(monkeypatch, {model: client_error(403) for model in enrich.GEMINI_MODELS})
+    monkeypatch.setattr(enrich, "groq_client", fake_groq_client(COMPANY))
+
+    assert enrich.ask("prompt") == (COMPANY, enrich.GROQ_MODEL)
+
+
+def test_a_cooled_model_is_skipped_on_the_next_call(monkeypatch):
+    _, gemini = use_fakes(monkeypatch, {FIRST: client_error(429), SECOND: COMPANY, THIRD: COMPANY})
+
+    enrich.ask_gemini("prompt")
+    gemini.calls.clear()
+    assert enrich.ask_gemini("prompt") == (COMPANY, SECOND)
+
+    assert gemini.calls == [SECOND]
+
+
+def test_server_error_still_cools_the_model_down_and_moves_on(monkeypatch):
+    server_error = errors.ServerError(503, {"error": {"message": "overloaded", "status": "UNAVAILABLE"}})
+    fake_redis, _ = use_fakes(monkeypatch, {FIRST: server_error, SECOND: COMPANY, THIRD: COMPANY})
+
+    assert enrich.ask_gemini("prompt") == (COMPANY, SECOND)
+    assert fake_redis.keys == {f"cooldown:{FIRST}": enrich.COOLDOWN_SECONDS}
+
+
+def test_timeout_still_cools_the_model_down_and_moves_on(monkeypatch):
+    fake_redis, _ = use_fakes(monkeypatch, {FIRST: httpx.ReadTimeout("slow"), SECOND: COMPANY, THIRD: COMPANY})
+
+    assert enrich.ask_gemini("prompt") == (COMPANY, SECOND)
+    assert fake_redis.keys == {f"cooldown:{FIRST}": enrich.COOLDOWN_SECONDS}
+
+
+def test_an_unknown_error_is_not_swallowed(monkeypatch):
+    fake_redis, gemini = use_fakes(monkeypatch, {FIRST: RuntimeError("boom"), SECOND: COMPANY, THIRD: COMPANY})
+
+    with pytest.raises(RuntimeError, match="boom"):
+        enrich.ask_gemini("prompt")
+
+    assert gemini.calls == [FIRST]
+    assert fake_redis.keys == {}
+
+
+def test_enrich_ends_on_groq_when_gemini_is_rate_limited_everywhere(monkeypatch):
+    use_fakes(monkeypatch, {model: client_error(429) for model in enrich.GEMINI_MODELS})
+    monkeypatch.setattr(enrich, "groq_client", fake_groq_client(COMPANY))
+    monkeypatch.setattr(enrich, "get_description", lambda url: SITE)
+
+    out = enrich.enrich("stripe.com")
+
+    assert out["error"] is None
+    assert out["model"] == enrich.GROQ_MODEL
+    assert out["company"] == COMPANY
