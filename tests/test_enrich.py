@@ -99,9 +99,28 @@ def test_enrich_errors_when_all_fields_are_not_available(monkeypatch):
     assert out["model"] is None
     assert out["name"] == "Stripe"
     assert out["error"] == (
-        "The model could not fill in industry, what_they_sell, target_customer from the site text "
-        "(it answered 'Not available'). The site gave too little to go on, please check the site manually."
+        "The model could not fill in industry (answered 'Not available'), "
+        "what_they_sell (answered 'Not available'), target_customer (answered 'Not available') from the site text. "
+        "The site gave too little to go on, please check the site manually."
     )
+
+
+def test_enrich_error_quotes_what_the_model_actually_answered(monkeypatch):
+    out = enrich_with_answer(monkeypatch, make_company(industry="unknown", target_customer="Not available"))
+
+    assert out["error"] == (
+        "The model could not fill in industry (answered 'unknown'), target_customer (answered 'Not available') "
+        "from the site text. The site gave too little to go on, please check the site manually."
+    )
+
+
+def test_enrich_error_caps_each_quoted_answer_at_40_characters(monkeypatch):
+    long_answer = "Not available " + "x" * 100
+
+    out = enrich_with_answer(monkeypatch, make_company(industry=long_answer))
+
+    assert f"(answered '{long_answer[:40]}')" in out["error"]
+    assert long_answer[:41] not in out["error"]
 
 
 def test_enrich_error_names_only_the_junk_field(monkeypatch):
@@ -111,6 +130,67 @@ def test_enrich_error_names_only_the_junk_field(monkeypatch):
     assert "target_customer" in out["error"]
     assert "industry" not in out["error"]
     assert "what_they_sell" not in out["error"]
+
+
+def test_is_junk_handles_quotes_dotted_and_spaced_forms():
+    junk = ["“Not available”", "‘unknown’", "N.A.", "n / a", "N/A.", "n a", "NA", "n.a. for this site"]
+    for value in junk:
+        assert enrich.is_junk(value), value
+
+
+def test_is_junk_treats_empty_whitespace_and_none_as_junk():
+    for value in ["", "   ", "\n\t", None, 0]:
+        assert enrich.is_junk(value), value
+
+
+def test_junk_fields_does_not_raise_on_none_values():
+    company = make_company()
+    company.industry = None
+
+    assert enrich.junk_fields(company) == ["industry"]
+
+
+def test_is_junk_matches_ambiguous_words_only_as_the_whole_answer():
+    for value in ["none", "Unknown", "NA", " None. "]:
+        assert enrich.is_junk(value), value
+    for value in ["NA region logistics", "None of the above insurance", "Unknown Pleasures records"]:
+        assert not enrich.is_junk(value), value
+
+
+def test_is_junk_matches_unambiguous_placeholders_as_a_prefix():
+    for value in ["Not available, see site", "not specified yet", "No information found", "Unavailable (blocked)"]:
+        assert enrich.is_junk(value), value
+
+
+def test_is_junk_keeps_real_answers_that_start_like_a_placeholder():
+    for value in ["Nathan's bakeries", "Nanotechnology", "Nonprofit software"]:
+        assert not enrich.is_junk(value), value
+
+
+def test_enrich_keeps_legitimate_answers_that_start_with_ambiguous_words(monkeypatch):
+    company = make_company(
+        industry="NA region logistics",
+        what_they_sell="None of the above insurance",
+        target_customer="Unknown Pleasures records",
+    )
+
+    out = enrich_with_answer(monkeypatch, company)
+
+    assert out["error"] is None
+    assert out["company"] is company
+
+
+def test_enrich_does_not_try_the_second_provider_when_the_first_gives_a_junk_company(monkeypatch):
+    second_calls = []
+    junk = make_company("unknown", "unknown", "unknown")
+    monkeypatch.setattr(enrich, "PROVIDERS", [lambda p: (junk, "first"), lambda p: second_calls.append(p) or (COMPANY, "second")])
+    monkeypatch.setattr(enrich, "get_description", lambda url: SITE)
+
+    out = enrich.enrich("stripe.com")
+
+    assert out["company"] is None
+    assert "industry" in out["error"]
+    assert second_calls == []
 
 
 def test_enrich_treats_junk_variants_as_missing(monkeypatch):

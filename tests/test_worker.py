@@ -135,7 +135,7 @@ def run_one_job(monkeypatch, enrich_result):
 
 
 def test_main_marks_job_failed_and_does_not_save_when_enrich_returns_an_error(monkeypatch):
-    error = "The model could not fill in industry from the site text (it answered 'Not available')."
+    error = "The model could not fill in industry (answered 'Not available') from the site text."
     failed = {"name": "Canva", "company": None, "model": None, "error": error}
 
     job, saved = run_one_job(monkeypatch, failed)

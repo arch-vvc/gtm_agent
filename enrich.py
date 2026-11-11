@@ -87,26 +87,36 @@ def ask(prompt):
     return None, None
 
 
-JUNK_ANSWERS=[
-    "not available",
-    "n/a",
-    "na",
-    "unknown",
-    "not specified",
-    "unspecified",
-    "none",
-    "no information",
-    "not provided",
-    "unavailable",
-]
-# A junk phrase counts when it is the whole answer or starts the answer as whole words,
+# Unambiguous placeholders are junk when they start the answer as whole words,
 # so "Not available, see site" is junk but "Nathan's bakeries" is not.
-JUNK_PATTERN=re.compile("^(" + "|".join(re.escape(phrase) for phrase in JUNK_ANSWERS) + r")(\W|$)")
+JUNK_PREFIXES=[
+    "not available",
+    "not specified",
+    "not provided",
+    "no information",
+    "unavailable",
+    "unspecified",
+    "n/a",
+]
+# Ambiguous words are junk only when they are the whole answer,
+# so "None" is junk but "None of the above insurance" is a real answer.
+JUNK_WHOLE_ANSWERS={"na", "n a", "none", "unknown"}
+JUNK_PATTERN=re.compile("^(" + "|".join(re.escape(phrase) for phrase in JUNK_PREFIXES) + r")(\W|$)")
+# Curly single and double quotes, written as escapes to keep this file ASCII.
+EDGE_CHARS=string.punctuation + string.whitespace + "‘’‚‛“”„‟"
+NOT_APPLICABLE_PATTERN=re.compile(r"\bn\s*[/.]\s*a\b")
+
+
+def normalise(value):
+    text=str(value or "").strip(EDGE_CHARS)
+    text=" ".join(text.lower().split())
+    # "n.a", "n / a" and "n/a" all become "n/a"
+    return NOT_APPLICABLE_PATTERN.sub("n/a", text)
 
 
 def is_junk(value):
-    cleaned=value.strip().strip(string.punctuation).strip().lower()
-    return bool(JUNK_PATTERN.match(cleaned))
+    cleaned=normalise(value)
+    return cleaned == "" or cleaned in JUNK_WHOLE_ANSWERS or bool(JUNK_PATTERN.match(cleaned))
 
 
 def junk_fields(company):
@@ -116,6 +126,10 @@ def junk_fields(company):
         "target_customer": company.target_customer,
     }
     return [field for field, value in fields.items() if is_junk(value)]
+
+
+def describe_answer(value):
+    return " ".join(str(value or "").split())[:40]
 
 
 def result(name, company=None, model=None, error=None):
@@ -152,11 +166,12 @@ def enrich(url):
 
     missing=junk_fields(company)
     if missing:
+        answers=", ".join(f"{field} (answered '{describe_answer(getattr(company, field))}')" for field in missing)
         return result(
             name,
             error=(
-                f"The model could not fill in {', '.join(missing)} from the site text "
-                "(it answered 'Not available'). The site gave too little to go on, please check the site manually."
+                f"The model could not fill in {answers} from the site text. "
+                "The site gave too little to go on, please check the site manually."
             ),
         )
     return result(name, company=company, model=model)
