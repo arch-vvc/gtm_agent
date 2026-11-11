@@ -1,3 +1,5 @@
+import pytest
+
 import worker
 from enrich import Company
 
@@ -70,3 +72,82 @@ def test_save_stores_nulls_when_there_is_no_company(monkeypatch):
     assert worker.save("https://example.com", failed) == 1
 
     assert conn.calls[0][1] == ("https://example.com", "Example", None, None, None, None, "Could not reach site")
+
+
+class StopLoop(Exception):
+    """Raised by the fake redis to leave the worker's infinite loop after one job."""
+
+
+class FakePipeline:
+    def __init__(self, redis):
+        self.redis = redis
+        self.steps = []
+
+    def hset(self, key, mapping):
+        self.steps.append(lambda: self.redis.hashes.setdefault(key, {}).update(mapping))
+
+    def expire(self, key, seconds):
+        pass
+
+    def execute(self):
+        for step in self.steps:
+            step()
+
+
+class FakeRedis:
+    """Hands out one job, then raises StopLoop on the next brpop."""
+
+    def __init__(self, url):
+        self.hashes = {"job:j1": {"url": url, "status": "queued"}}
+        self.popped = False
+
+    def scan_iter(self, match):
+        return iter([])
+
+    def hget(self, key, field):
+        return self.hashes[key].get(field)
+
+    def hset(self, key, field, value):
+        self.hashes[key][field] = value
+
+    def pipeline(self):
+        return FakePipeline(self)
+
+    def brpop(self, name, timeout):
+        if self.popped:
+            raise StopLoop
+        self.popped = True
+        return name, "j1"
+
+
+def run_one_job(monkeypatch, enrich_result):
+    fake = FakeRedis("https://canva.com")
+    saved = []
+    monkeypatch.setattr(worker, "r", fake)
+    monkeypatch.setattr(worker, "find_company", lambda url: None)
+    monkeypatch.setattr(worker, "enrich", lambda url: enrich_result)
+    monkeypatch.setattr(worker, "save", lambda url, result: saved.append(result) or 9)
+
+    with pytest.raises(StopLoop):
+        worker.main()
+
+    return fake.hashes["job:j1"], saved
+
+
+def test_main_marks_job_failed_and_does_not_save_when_enrich_returns_an_error(monkeypatch):
+    error = "The model could not fill in industry (answered 'Not available') from the site text."
+    failed = {"name": "Canva", "company": None, "model": None, "error": error}
+
+    job, saved = run_one_job(monkeypatch, failed)
+
+    assert job["status"] == "failed"
+    assert job["error"] == error
+    assert saved == []
+
+
+def test_main_saves_job_when_enrich_succeeds(monkeypatch):
+    job, saved = run_one_job(monkeypatch, RESULT)
+
+    assert job["status"] == "done"
+    assert job["company_id"] == 9
+    assert saved == [RESULT]
