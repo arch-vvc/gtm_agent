@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+import groq
 import httpx
 import pytest
 from google.genai import errors
@@ -485,3 +486,65 @@ def test_enrich_ends_on_groq_when_gemini_is_rate_limited_everywhere(monkeypatch)
     assert out["error"] is None
     assert out["model"] == enrich.GROQ_MODEL
     assert out["company"] == COMPANY
+
+
+def groq_bad_request():
+    response = httpx.Response(400, request=httpx.Request("POST", "https://api.groq.com/chat"))
+    return groq.BadRequestError("json_validate_failed", response=response, body=None)
+
+
+def groq_auth_error():
+    response = httpx.Response(401, request=httpx.Request("POST", "https://api.groq.com/chat"))
+    return groq.AuthenticationError("bad key", response=response, body=None)
+
+
+def raising_groq_client(error):
+    def create(**kwargs):
+        raise error
+
+    return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+
+
+def test_groq_request_uses_low_reasoning_effort_and_a_4096_token_budget(monkeypatch):
+    fake = fake_groq_client(COMPANY)
+    monkeypatch.setattr(enrich, "groq_client", fake)
+
+    enrich.ask_groq("prompt")
+
+    sent = fake.calls[0]
+    assert enrich.GROQ_REASONING_EFFORT == "low"
+    assert enrich.GROQ_MAX_COMPLETION_TOKENS == 4096
+    assert sent["model"] == enrich.GROQ_MODEL
+    assert sent["response_format"]["type"] == "json_schema"
+    assert sent["response_format"]["json_schema"]["strict"] is True
+    assert sent["reasoning_effort"] == "low"
+    assert sent["max_completion_tokens"] == 4096
+
+
+def test_groq_bad_request_returns_none_and_logs_status_and_message(monkeypatch, capsys):
+    monkeypatch.setattr(enrich, "groq_client", raising_groq_client(groq_bad_request()))
+
+    assert enrich.ask_groq("prompt") == (None, None)
+
+    out = capsys.readouterr().out
+    assert "400" in out
+    assert "json_validate_failed" in out
+
+
+def test_groq_bad_request_ends_the_job_as_all_models_busy(monkeypatch):
+    use_fakes(monkeypatch, {model: client_error(429) for model in enrich.GEMINI_MODELS})
+    monkeypatch.setattr(enrich, "groq_client", raising_groq_client(groq_bad_request()))
+    monkeypatch.setattr(enrich, "get_description", lambda url: SITE)
+
+    assert enrich.ask("prompt") == (None, None)
+    out = enrich.enrich("stripe.com")
+
+    assert "busy" in out["error"]
+    assert out["company"] is None
+
+
+def test_groq_authentication_error_still_propagates(monkeypatch):
+    monkeypatch.setattr(enrich, "groq_client", raising_groq_client(groq_auth_error()))
+
+    with pytest.raises(groq.AuthenticationError):
+        enrich.ask_groq("prompt")
