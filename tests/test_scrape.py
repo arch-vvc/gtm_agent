@@ -110,7 +110,20 @@ def site_pages(customers_page):
 
 @pytest.mark.parametrize(
     "href",
-    ["/customers", "/Customers/", "/customer-stories", "/case-studies", "/case-study/acme", "/use-cases", "/use-case/sales", "/en/customers/index"],
+    [
+        "/customers",
+        "/customers/",
+        "/Customers/",
+        "/customers/atlassian",
+        "/en/customers",
+        "/resources/case-studies",
+        "/customer-stories",
+        "/case-studies",
+        "/case-study/acme",
+        "/use-cases",
+        "/use-case/sales",
+        "/en/customers/index",
+    ],
 )
 def test_find_customers_url_matches_href_paths(href):
     soup = links_page(f'<a href="{href}">Read more</a>')
@@ -118,11 +131,78 @@ def test_find_customers_url_matches_href_paths(href):
     assert find_customers_url(soup, BASE) == urljoin(BASE, href)
 
 
-@pytest.mark.parametrize("text", ["Customers", "  Customer Stories ", "CASE STUDIES", "Use cases", "Our customers", "Meet our customers"])
+@pytest.mark.parametrize(
+    "href",
+    [
+        "/customers-login",
+        "/blog/customers-first",
+        "/careers/use-cases-engineer",
+        "/customers/login",
+        "/customers/signin",
+        "/customers/sign-in",
+        "/customers/signup",
+        "/customers/sign-up",
+        "/support/customers",
+        "/help/customers",
+        "/careers/customers",
+        "/jobs/customers",
+    ],
+)
+def test_find_customers_url_rejects_lookalike_and_login_paths(href):
+    soup = links_page(f'<a href="{href}">Read more</a>')
+
+    assert find_customers_url(soup, BASE) is None
+
+
+def test_find_customers_url_rejects_other_hosts_for_href_match():
+    soup = links_page(
+        '<a href="https://support.acme.com/customers/login">Read more</a>',
+        '<a href="https://customers.example.org/">Read more</a>',
+        '<a href="https://other.com/customers">Read more</a>',
+    )
+
+    assert find_customers_url(soup, BASE) is None
+
+
+def test_find_customers_url_rejects_other_hosts_for_text_match():
+    soup = links_page(
+        '<a href="https://customers.example.org/">Customers</a>',
+        '<a href="https://support.acme.com/why">Case studies</a>',
+    )
+
+    assert find_customers_url(soup, BASE) is None
+
+
+def test_find_customers_url_accepts_www_variant_of_the_same_host():
+    soup = links_page('<a href="https://www.acme.com/customers">Read more</a>')
+
+    assert find_customers_url(soup, BASE) == "https://www.acme.com/customers"
+
+
+def test_find_customers_url_accepts_bare_host_when_base_has_www():
+    soup = links_page('<a href="https://ACME.com/customers">Read more</a>')
+
+    assert find_customers_url(soup, "https://www.acme.com") == "https://ACME.com/customers"
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["Customers", "  Customer Stories ", "CASE STUDIES", "Case Studies", "Use cases", "Our customers", "Meet our customers"],
+)
 def test_find_customers_url_matches_visible_text(text):
     soup = links_page(f'<a href="/why-acme">{text}</a>')
 
     assert find_customers_url(soup, BASE) == BASE + "/why-acme"
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["Customers login", "Customer login", "Customers sign in", "Customers signin", "Customer log in", "Customer support", "Customers help"],
+)
+def test_find_customers_url_ignores_login_and_support_link_text(text):
+    soup = links_page(f'<a href="/portal">{text}</a>')
+
+    assert find_customers_url(soup, BASE) is None
 
 
 def test_find_customers_url_prefers_href_over_text():
@@ -132,7 +212,9 @@ def test_find_customers_url_prefers_href_over_text():
 
 
 @pytest.mark.parametrize("text", ["Customer support", "Customer service", "Customer success", "For customers", "Help for customers"])
-def test_find_customers_url_ignores_navigation_text(text):
+def test_find_customers_url_ignores_support_style_navigation_text(text):
+    # "Customer service" and "Customer success" never match the text pattern at all,
+    # the others are skipped by the login, support, help and "for customers" rules.
     soup = links_page(f'<a href="/help">{text}</a>')
 
     assert find_customers_url(soup, BASE) is None
@@ -176,6 +258,46 @@ def test_get_customers_text_extracts_headings_long_paragraphs_and_logo_alt_text(
     assert "Hubspot" in text
     assert "Hubspot Logo" not in text
     assert "Intercom" in text
+
+
+def customers_text_for(monkeypatch, body):
+    page = "<html><body>" + body + "</body></html>"
+    monkeypatch.setattr(scrape.httpx, "get", lambda url, **kwargs: FakeResponse(page))
+    return get_customers_text(BASE + "/customers")
+
+
+def test_get_customers_text_strips_logo_image_suffix(monkeypatch):
+    text = customers_text_for(monkeypatch, '<img alt="Stripe logo image"><img alt="Notion Logo Image">')
+
+    assert text.split("\n") == ["Stripe", "Notion"]
+
+
+@pytest.mark.parametrize("alt", ["logo", "Logo", "  LOGO  ", "logo image"])
+def test_get_customers_text_drops_alt_that_is_just_logo(monkeypatch, alt):
+    text = customers_text_for(monkeypatch, f'<h2>Our customers</h2><img alt="{alt}">')
+
+    assert text == "Our customers"
+
+
+def test_get_customers_text_drops_long_alt_text(monkeypatch):
+    long_alt = "A photo of a smiling team in an office, " + "x" * 30
+    assert len(long_alt) > 60
+
+    text = customers_text_for(monkeypatch, f'<h2>Our customers</h2><img alt="{long_alt}"><img alt="Zomato">')
+
+    assert text.split("\n") == ["Our customers", "Zomato"]
+
+
+def test_get_customers_text_keeps_alt_of_exactly_60_characters(monkeypatch):
+    alt = "y" * 60
+
+    assert customers_text_for(monkeypatch, f'<img alt="{alt}">') == alt
+
+
+def test_get_customers_text_silently_drops_logo_without_alt(monkeypatch):
+    text = customers_text_for(monkeypatch, '<h2>Our customers</h2><img src="/e.svg"><img src="/f.svg" alt="">')
+
+    assert text == "Our customers"
 
 
 def test_get_customers_text_removes_duplicates(monkeypatch):

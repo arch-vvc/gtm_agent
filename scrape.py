@@ -49,11 +49,26 @@ def get_about_text(about_url):
     return text[:2000] or None
 
 
-CUSTOMERS_HREF_PARTS=["/customers", "/customer-stories", "/case-studies", "/case-study", "/use-cases", "/use-case"]
+CUSTOMERS_PATH_SEGMENTS={"customers", "customer-stories", "case-studies", "case-study", "use-cases", "use-case"}
+# A path with one of these segments is a login, help or jobs page, not a page that names buyers.
+BLOCKED_PATH_SEGMENTS={"login", "signin", "sign-in", "signup", "sign-up", "support", "help", "careers", "jobs"}
 CUSTOMERS_TEXT_PATTERN=re.compile(r"\b(customers|customer stories|case studies|use cases)\b")
 # "For customers" is usually a login or help menu, not a page that names buyers.
-NOT_CUSTOMERS_TEXT="for customers"
+BLOCKED_TEXT_PARTS=("for customers", "login", "log in", "sign in", "signin", "support", "help")
 SKIPPED_HREF_PREFIXES=("#", "mailto:", "tel:", "javascript:")
+
+
+def same_site(url, base_url):
+    host=urlparse(url).hostname or urlparse(base_url).hostname
+    base_host=urlparse(base_url).hostname
+    if not host or not base_host:
+        return False
+    return host.lower().removeprefix("www.")==base_host.lower().removeprefix("www.")
+
+
+def is_customers_path(path):
+    segments={segment for segment in path.lower().split("/") if segment}
+    return bool(segments & CUSTOMERS_PATH_SEGMENTS) and not segments & BLOCKED_PATH_SEGMENTS
 
 
 def find_customers_url(soup, base_url):
@@ -62,20 +77,26 @@ def find_customers_url(soup, base_url):
         href=link["href"].strip()
         if href.lower().startswith(SKIPPED_HREF_PREFIXES):
             continue
+        if not same_site(urljoin(base_url, href), base_url):
+            continue
         links.append(link)
 
     for link in links:
-        path=urlparse(link["href"].strip()).path.lower()
-        if any(part in path for part in CUSTOMERS_HREF_PARTS):
+        if is_customers_path(urlparse(link["href"].strip()).path):
             return urljoin(base_url, link["href"].strip())
 
     for link in links:
         text=" ".join(link.get_text().split()).lower()
-        if NOT_CUSTOMERS_TEXT in text:
+        if any(part in text for part in BLOCKED_TEXT_PARTS):
             continue
         if CUSTOMERS_TEXT_PATTERN.search(text):
             return urljoin(base_url, link["href"].strip())
     return None
+
+
+MAX_ALT_LENGTH=60
+# Strips " logo" or " logo image", and drops an alt that is only "logo".
+LOGO_SUFFIX_PATTERN=re.compile(r"(?:^|\s+)logo(?:\s+image)?$", re.IGNORECASE)
 
 
 def get_customers_text(customers_url):
@@ -94,7 +115,10 @@ def get_customers_text(customers_url):
     for tag in soup.find_all(["h1", "h2", "h3", "p", "img"]):
         if tag.name == "img":
             # Customer logos are usually images, so the alt text holds the company name.
-            piece=re.sub(r"\s+logo$", "", " ".join((tag.get("alt") or "").split()), flags=re.IGNORECASE)
+            alt=" ".join((tag.get("alt") or "").split())
+            if len(alt) > MAX_ALT_LENGTH:
+                continue
+            piece=LOGO_SUFFIX_PATTERN.sub("", alt)
         else:
             piece=tag.get_text(" ", strip=True)
             if tag.name == "p" and len(piece) <= 40:
