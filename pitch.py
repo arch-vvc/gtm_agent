@@ -8,12 +8,12 @@ from urllib.parse import urlparse
 CLUSTERS = ("A", "B", "C", "D", "E", "F")
 
 CLUSTER_LABELS = {
-    "A": "Voice and conversational AI agents (calls, support, collections, sales)",
-    "B": "Accounts payable, invoice and finance operations automation",
-    "C": "Document, KYC and form processing automation (planned demo: document extraction checker)",
-    "D": "Customer support and ticket automation (planned demo: ticket triage replay)",
-    "E": "Data, analytics and reconciliation platforms (planned demo: data reconciliation checker)",
-    "F": "Anything else, or the site does not make it clear",
+    "A": "voice and conversational agents",
+    "B": "finance, insurance, back office",
+    "C": "enterprise AI deployment (planned demo: SOP to agent kit, not built yet)",
+    "D": "supply chain and physical ops (planned demo: capstone spin off, not built yet)",
+    "E": "AI infra and dev tools (planned demo: migration validator, not built yet)",
+    "F": "vertical SaaS (no default demo)",
 }
 
 # The demo comes from this table, never from the model.
@@ -59,7 +59,8 @@ ALLOWED_WORDS = frozenset(
 PLACEHOLDERS = (LOOM, REPO)
 
 # Words, with apostrophes kept inside so a possessive stays attached to its word.
-WORD_PATTERN = re.compile(f"[A-Za-z0-9][A-Za-z0-9'{CURLY_APOSTROPHE}]*")
+# Unicode aware: [^\\W_] is any letter or digit, so "Caf\u00e9" stays one token.
+WORD_PATTERN = re.compile(f"[^\\W_][^\\W_'{CURLY_APOSTROPHE}]*(?:['{CURLY_APOSTROPHE}][^\\W_]+)*", re.UNICODE)
 
 
 def check_pitch_note(note):
@@ -68,6 +69,7 @@ def check_pitch_note(note):
     Checks: at most 150 words, no hyphen or dash characters, and the last
     non blank line contains the Loom placeholder and ends with the repo one.
     """
+    note = note or ""
     violations = []
 
     word_count = len(note.split())
@@ -104,7 +106,7 @@ def build_corpus(site):
 
 def candidate_names(note):
     """Words in the note that look like names: a capital letter, an inner capital or a digit."""
-    text = note
+    text = note or ""
     for placeholder in PLACEHOLDERS:
         text = text.replace(placeholder, " ")
 

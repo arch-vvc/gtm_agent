@@ -33,6 +33,40 @@ def test_cluster_demos_cover_every_cluster():
     assert pitch.REPO == "[REPO_URL]"
 
 
+def test_cluster_labels_match_the_spec_exactly():
+    assert pitch.CLUSTER_LABELS == {
+        "A": "voice and conversational agents",
+        "B": "finance, insurance, back office",
+        "C": "enterprise AI deployment (planned demo: SOP to agent kit, not built yet)",
+        "D": "supply chain and physical ops (planned demo: capstone spin off, not built yet)",
+        "E": "AI infra and dev tools (planned demo: migration validator, not built yet)",
+        "F": "vertical SaaS (no default demo)",
+    }
+
+
+def test_none_note_does_not_raise():
+    violations = pitch.check_pitch_note(None)
+    assert any(pitch.LOOM in v and pitch.REPO in v for v in violations)
+    assert pitch.candidate_names(None) == []
+    assert pitch.ungrounded_names(None, "Peakflo") == []
+    assert any(pitch.LOOM in v for v in pitch.pitch_violations(None, SITE))
+
+
+def test_empty_note_reports_missing_placeholder_line():
+    violations = pitch.check_pitch_note("")
+    assert len(violations) == 1
+    assert pitch.LOOM in violations[0] and pitch.REPO in violations[0]
+    assert pitch.ungrounded_names("", "") == []
+
+
+def test_ungrounded_handles_non_ascii_names_as_whole_tokens():
+    cafe = "Caf\u00e9"
+    assert pitch.candidate_names(f"We like {cafe} Zoho.") == ["We", cafe, "Zoho"]
+    assert pitch.ungrounded_names(f"We like {cafe}.", f"The {cafe} team in India") == []
+    assert pitch.ungrounded_names(f"We like {cafe}.", "Rahul") == [cafe]
+    assert pitch.ungrounded_names(f"{cafe}{chr(0x2019)}s menu", "Rahul") == [cafe]
+
+
 def test_style_rejects_151_words():
     filler = " ".join(["word"] * 147)
     note = f"{filler}\nLoom: [LOOM_URL] Repo: [REPO_URL]"
