@@ -21,6 +21,11 @@ def normalise_url(url):
     return "https://"+host+path
 
 
+def host_of(url):
+    """Lowercased host of a URL with a leading www. removed."""
+    return (urlparse(url).hostname or "").lower().removeprefix("www.")
+
+
 def find_about_url(soup, base_url):
     for link in soup.find_all("a", href=True):
         href=link["href"].lower()
@@ -133,14 +138,15 @@ def get_description(url):
     url=normalise_url(url)
 
     name=urlparse(url).netloc.removeprefix("www.").split(".")[0].capitalize()
+    input_domain=host_of(url)
 
     try:
         response=httpx.get(url, headers=headers, follow_redirects=True, timeout=10)
     except httpx.HTTPError:
-        return {"name": name, "title": None, "description": None, "about_url": None, "about": None, "customers_url": None, "customers": None, "error": "Could not reach site"}
+        return {"name": name, "title": None, "description": None, "about_url": None, "about": None, "customers_url": None, "customers": None, "domain": input_domain, "error": "Could not reach site"}
 
     if response.is_error:
-        return {"name": name, "title": None, "description": None, "about_url": None, "about": None, "customers_url": None, "customers": None, "error": f"Site returned {response.status_code}"}
+        return {"name": name, "title": None, "description": None, "about_url": None, "about": None, "customers_url": None, "customers": None, "domain": input_domain, "error": f"Site returned {response.status_code}"}
    
     soup=BeautifulSoup(response.text, "html.parser")
 
@@ -167,6 +173,7 @@ def get_description(url):
         "about": about,
         "customers_url": customers_url,
         "customers": customers,
+        "domain": host_of(str(response.url)) or input_domain,
         "error": None,
     }
 

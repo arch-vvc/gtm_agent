@@ -404,3 +404,41 @@ def test_get_description_error_paths_have_customers_keys(monkeypatch):
     assert site["error"] == "Site returned 503"
     assert site["customers_url"] is None
     assert site["customers"] is None
+
+
+# ---- final domain after redirects ----
+
+
+def test_get_description_domain_is_the_host_after_redirects(monkeypatch):
+    redirected = FakeResponse(HOME_PAGE_NO_CUSTOMERS, url="https://www.notion.com/")
+    monkeypatch.setattr(scrape.httpx, "get", lambda url, **kwargs: redirected)
+
+    site = get_description("notion.so")
+
+    assert site["domain"] == "notion.com"
+    assert site["name"] == "Notion"
+
+
+def test_get_description_domain_is_lowercased_and_drops_www(monkeypatch):
+    response = FakeResponse(HOME_PAGE_NO_CUSTOMERS, url="https://WWW.Acme.COM/Home")
+    monkeypatch.setattr(scrape.httpx, "get", lambda url, **kwargs: response)
+
+    assert get_description("acme.com")["domain"] == "acme.com"
+
+
+def test_get_description_domain_keeps_a_subdomain(monkeypatch):
+    response = FakeResponse(HOME_PAGE_NO_CUSTOMERS, url="https://docs.acme.com/")
+    monkeypatch.setattr(scrape.httpx, "get", lambda url, **kwargs: response)
+
+    assert get_description("docs.acme.com")["domain"] == "docs.acme.com"
+
+
+def test_get_description_domain_on_error_paths_is_the_input_host(monkeypatch):
+    def unreachable(url, **kwargs):
+        raise httpx.ConnectError("boom")
+
+    monkeypatch.setattr(scrape.httpx, "get", unreachable)
+    assert get_description("https://www.Notion.so/")["domain"] == "notion.so"
+
+    monkeypatch.setattr(scrape.httpx, "get", lambda url, **kwargs: FakeResponse(status_code=503, url="https://www.notion.com/"))
+    assert get_description("notion.so")["domain"] == "notion.so"
