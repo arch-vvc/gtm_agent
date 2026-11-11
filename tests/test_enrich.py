@@ -236,3 +236,43 @@ def test_prompt_leaves_out_missing_about_and_keeps_description(monkeypatch):
     assert "Not available" not in prompts[0]
     assert "About page:" not in prompts[0]
     assert "Description: Online payment processing" in prompts[0]
+
+
+# Synthetic Loom style example: the home page does not say who buys it, the customers page does.
+CUSTOMERS_TEXT = "Product, design and engineering teams\nAtlassian\nHubspot"
+
+
+def prompt_for(monkeypatch, site):
+    prompts = []
+    monkeypatch.setattr(enrich, "get_description", lambda url: site)
+    monkeypatch.setattr(enrich, "ask", lambda prompt: prompts.append(prompt) or (COMPANY, "fake-model"))
+    enrich.enrich("stripe.com")
+    return prompts[0]
+
+
+def test_prompt_includes_customers_page_and_buyer_instruction(monkeypatch):
+    site = {**SITE, "customers_url": "https://stripe.com/customers", "customers": CUSTOMERS_TEXT}
+
+    prompt = prompt_for(monkeypatch, site)
+
+    assert f"Customers page: {CUSTOMERS_TEXT}" in prompt
+    assert "name the type of buyer, meaning who pays for it" in prompt
+    assert "industry, company size or job title" in prompt
+    assert "base target_customer on the companies and use cases named there" in prompt
+    assert "Mac and PC users" in prompt
+    assert "UNKNOWN" in prompt
+
+
+def test_prompt_omits_customers_section_when_there_is_no_customers_text(monkeypatch):
+    for site in [{**SITE, "customers": None}, {**SITE, "customers": ""}, SITE]:
+        prompt = prompt_for(monkeypatch, site)
+
+        assert "Customers page:" not in prompt
+        assert "name the type of buyer, meaning who pays for it" in prompt
+        assert "base target_customer on the companies" not in prompt
+
+
+def test_prompt_never_asks_for_a_device_or_generic_user_group(monkeypatch):
+    prompt = prompt_for(monkeypatch, SITE)
+
+    assert "never answer with a device, operating system or a generic user group" in prompt

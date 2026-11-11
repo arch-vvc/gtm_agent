@@ -49,6 +49,62 @@ def get_about_text(about_url):
     return text[:2000] or None
 
 
+CUSTOMERS_HREF_PARTS=["/customers", "/customer-stories", "/case-studies", "/case-study", "/use-cases", "/use-case"]
+CUSTOMERS_TEXT_PATTERN=re.compile(r"\b(customers|customer stories|case studies|use cases)\b")
+# "For customers" is usually a login or help menu, not a page that names buyers.
+NOT_CUSTOMERS_TEXT="for customers"
+SKIPPED_HREF_PREFIXES=("#", "mailto:", "tel:", "javascript:")
+
+
+def find_customers_url(soup, base_url):
+    links=[]
+    for link in soup.find_all("a", href=True):
+        href=link["href"].strip()
+        if href.lower().startswith(SKIPPED_HREF_PREFIXES):
+            continue
+        links.append(link)
+
+    for link in links:
+        path=urlparse(link["href"].strip()).path.lower()
+        if any(part in path for part in CUSTOMERS_HREF_PARTS):
+            return urljoin(base_url, link["href"].strip())
+
+    for link in links:
+        text=" ".join(link.get_text().split()).lower()
+        if NOT_CUSTOMERS_TEXT in text:
+            continue
+        if CUSTOMERS_TEXT_PATTERN.search(text):
+            return urljoin(base_url, link["href"].strip())
+    return None
+
+
+def get_customers_text(customers_url):
+    if customers_url is None:
+        return None
+    try:
+        response=httpx.get(customers_url, headers=headers, follow_redirects=True, timeout=10)
+    except httpx.HTTPError:
+        return None
+
+    if response.is_error:
+        return None
+
+    soup=BeautifulSoup(response.text, "html.parser")
+    pieces=[]
+    for tag in soup.find_all(["h1", "h2", "h3", "p", "img"]):
+        if tag.name == "img":
+            # Customer logos are usually images, so the alt text holds the company name.
+            piece=re.sub(r"\s+logo$", "", " ".join((tag.get("alt") or "").split()), flags=re.IGNORECASE)
+        else:
+            piece=tag.get_text(" ", strip=True)
+            if tag.name == "p" and len(piece) <= 40:
+                continue
+        if piece and piece not in pieces:
+            pieces.append(piece)
+    text="\n".join(pieces)
+    return text[:2000] or None
+
+
 def get_description(url):
     url=normalise_url(url)
 
@@ -57,10 +113,10 @@ def get_description(url):
     try:
         response=httpx.get(url, headers=headers, follow_redirects=True, timeout=10)
     except httpx.HTTPError:
-        return {"name": name, "title": None, "description": None, "about_url": None, "about": None, "error": "Could not reach site"}
+        return {"name": name, "title": None, "description": None, "about_url": None, "about": None, "customers_url": None, "customers": None, "error": "Could not reach site"}
 
     if response.is_error:
-        return {"name": name, "title": None, "description": None, "about_url": None, "about": None, "error": f"Site returned {response.status_code}"}
+        return {"name": name, "title": None, "description": None, "about_url": None, "about": None, "customers_url": None, "customers": None, "error": f"Site returned {response.status_code}"}
    
     soup=BeautifulSoup(response.text, "html.parser")
 
@@ -76,7 +132,19 @@ def get_description(url):
     about_url=find_about_url(soup, str(response.url))
     about=get_about_text(about_url)
 
-    return {"name": name, "title": title, "description": description, "about_url": about_url, "about": about, "error": None}
+    customers_url=find_customers_url(soup, str(response.url))
+    customers=get_customers_text(customers_url)
+
+    return {
+        "name": name,
+        "title": title,
+        "description": description,
+        "about_url": about_url,
+        "about": about,
+        "customers_url": customers_url,
+        "customers": customers,
+        "error": None,
+    }
 
 
 if __name__ == "__main__":

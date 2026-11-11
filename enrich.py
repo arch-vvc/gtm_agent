@@ -153,10 +153,16 @@ def enrich(url):
         lines.append(f"Description: {site['description']}")
     if site["about"]:
         lines.append(f"About page: {site['about']}")
+    if site.get("customers"):
+        lines.append(f"Customers page: {site['customers']}")
     lines.append("")
     lines.append("Fill in the fields using only this information.")
     lines.append("If a field cannot be determined from this information, answer exactly UNKNOWN for that field.")
-    lines.append("Be specific: name the actual product or service and the actual type of customer.")
+    lines.append("Be specific: name the actual product or service.")
+    lines.append("For target_customer, name the type of buyer, meaning who pays for it, as industry, company size or job title.")
+    if site.get("customers"):
+        lines.append("A customers page is given, so base target_customer on the companies and use cases named there.")
+    lines.append('For target_customer, never answer with a device, operating system or a generic user group such as "Mac and PC users".')
     prompt="\n".join(lines)
 
     print("Asking LLM")
