@@ -22,7 +22,9 @@ NOT_FOUND_COOLDOWN_SECONDS=3600
 gemini_client=genai.Client(http_options=types.HttpOptions(timeout=30000))
 groq_client=Groq(timeout=30)
 GEMINI_MODELS=["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3.8-flash"]
-GROQ_MODEL="openai/gpt-oss-20b"
+# The second model is tried when the first fails, since each one breaks in different ways.
+GROQ_MODELS=["openai/gpt-oss-20b", "openai/gpt-oss-120b"]
+GROQ_MODEL=GROQ_MODELS[0]
 # gpt-oss is a reasoning model: without these the default budget is spent thinking and no JSON comes back.
 GROQ_REASONING_EFFORT="low"
 GROQ_MAX_COMPLETION_TOKENS=4096
@@ -88,8 +90,10 @@ def ask_gemini(prompt):
             )
             print(f"{model} answered")
             return response.parsed, model
-        except errors.ServerError:
+        except errors.ServerError as error:
             print(f"{model} returned a server error, cooling down for {COOLDOWN_SECONDS}s")
+            # Only the code and the message are logged, never headers or the key, so repeated 5xx can be diagnosed.
+            print(f"{model} server error detail ({error.code}: {short(error.message)})")
             r.set(f"cooldown:{model}", 1, ex=COOLDOWN_SECONDS)
         except httpx.TimeoutException:
             print(f"{model} timed out, cooling down for {COOLDOWN_SECONDS}s")
@@ -117,36 +121,50 @@ def handle_client_error(model, error):
         print(f"{model} rejected the request ({error.code}: {error.message}), trying the next model")
 
 
-def ask_groq(prompt):
-    print("Trying Groq")
-    try:
-        response=groq_client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "company",
-                    "strict": True,
-                    "schema": strict_schema(Company),
-                },
+def short(text):
+    """Cut an error message to 200 characters for the log."""
+    return str(text)[:200]
+
+
+def groq_request(model, prompt):
+    return groq_client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "company",
+                "strict": True,
+                "schema": strict_schema(Company),
             },
-            reasoning_effort=GROQ_REASONING_EFFORT,
-            max_completion_tokens=GROQ_MAX_COMPLETION_TOKENS,
-        )
-        print("Groq answered")
-        return Company.model_validate_json(response.choices[0].message.content), GROQ_MODEL
-    except (groq.InternalServerError, groq.RateLimitError, groq.APIConnectionError):
-        print("Groq is busy too")
-        return None, None
-    except groq.BadRequestError as error:
-        # Only the status and message are logged, never headers or keys. A bad key (AuthenticationError) stays loud.
-        print(f"Groq rejected the request ({error.status_code}: {error.message}), giving up")
-        return None, None
-    except (ValidationError, ValueError):
-        # Groq answered, but not with JSON that fits the schema (ValueError covers bad JSON).
-        print("Groq returned an answer that does not fit the schema")
-        return None, None
+        },
+        reasoning_effort=GROQ_REASONING_EFFORT,
+        max_completion_tokens=GROQ_MAX_COMPLETION_TOKENS,
+    )
+
+
+def ask_groq(prompt):
+    """Try each Groq model in turn and return (company, model that answered).
+
+    Any failure that another model might not share moves on to the next model.
+    Only the status and message are logged, never headers or keys. A bad key
+    (AuthenticationError) is not caught, so it stays loud.
+    """
+    for model in GROQ_MODELS:
+        print(f"Trying Groq {model}")
+        try:
+            response=groq_request(model, prompt)
+            company=Company.model_validate_json(response.choices[0].message.content)
+            print(f"Groq {model} answered")
+            return company, model
+        except (groq.BadRequestError, groq.NotFoundError) as error:
+            print(f"Groq {model} rejected the request ({error.status_code}: {short(error.message)}), trying the next model")
+        except (groq.InternalServerError, groq.RateLimitError, groq.APIConnectionError):
+            print(f"Groq {model} is busy, trying the next model")
+        except (ValidationError, ValueError) as error:
+            # Groq answered, but not with JSON that fits the schema (ValueError covers bad JSON).
+            print(f"Groq {model} returned an answer that does not fit the schema ({short(error)}), trying the next model")
+    return None, None
 
 
 PROVIDERS=[ask_gemini, ask_groq]
@@ -160,8 +178,18 @@ def ask(prompt):
     return None, None
 
 
-BUILT_DEMOS="""A: voice agent call QA. Simulated callers and a judge check that a voice agent follows a client script before go live.
-B: invoice exception triage. Messy purchase order, invoice and payment exports go in, and every three way match mismatch is flagged and explained."""
+# Fixed fact sheets for the built demos. The pitch note may describe a demo only with these facts. Edit them here.
+DEMO_FACTS_A=(
+    "A: voice agent call QA takes a client's call script (SOP), runs about 20 simulated callers against a voice agent, "
+    "including Hinglish and adversarial callers, has a judge score every call against the script, and shows the exact "
+    "failing turns on a dashboard so one prompt fix can be tested and the pass rate compared."
+)
+DEMO_FACTS_B=(
+    "B: invoice exception triage takes three messy exports (invoices, purchase orders and payments) such as from Tally "
+    "or Zoho, flags every three way match mismatch (wrong amounts, duplicates, missing purchase orders and GST errors), "
+    "shows the rupees at risk, and lets you click a row to see the raw rows and a one sentence explanation."
+)
+BUILT_DEMOS=DEMO_FACTS_A+"\n"+DEMO_FACTS_B
 
 
 def result(name, company=None, model=None, error=None, demo=None, pitch_note=None, pitch_error=None, site=None):
@@ -256,7 +284,10 @@ Rules for pitch_note:
 6. No flattery or hype words such as perfectly, excited, love, passionate, game changing.
 7. Name only products and customers that appear in the text above. Do not invent numbers.
 8. Never name the demo repos. Describe the demo in plain words instead.
-9. The last line must be exactly: Loom: {pitch.LOOM} Repo: {pitch.REPO}"""
+9. Describe the demo ONLY with the facts above. Do not claim integrations, metrics (such as DSO or cash flow impact), interfaces, data sources, file formats or features that are not listed. You may say how you WOULD adapt it to this company, in the future tense, using the tailoring changes.
+10. If you choose a cluster whose demo is "none built" (C, D, E, F or G), this rule replaces rule 2: do not say or imply that a demo was built, and do not mention or describe the demos from clusters A and B. Write in the future tense ("I would build ...") naming ONE concrete first deliverable drawn from the tailoring changes and, where the cluster label gives one, the planned demo, and offer to show a first version. Keep the same structure and last line.
+11. Include at least one concrete detail taken from the text above, in the conclusion line or the first reason: a named customer, a product feature or a short phrase from the company's own site. A generic phrase such as "high volume workflows" is not a detail.
+12. The last line must be exactly: Loom: {pitch.LOOM} Repo: {pitch.REPO}"""
 
 
 def junk_error(company, missing):

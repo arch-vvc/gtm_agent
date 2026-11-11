@@ -4,8 +4,9 @@ gtm_agent is a pitch engine for forward deployed engineer (FDE) outreach. You gi
 
 ## Status
 
-- **Verified:** the test suite (490 tests, all model calls mocked), the migration check against Postgres 16, and an end to end run against real Postgres and Redis with a faked scraper and a faked model.
-- **Live runs seen so far (author's machine):** one live Gemini run on cekura.ai gave cluster A, the demo `voice-agent-call-qa` and an FDE role found. Its pitch note was written in the wrong voice (as a vendor selling a product), which is now fixed in the prompt and has not been re-run live. The first live Groq run failed with `json_validate_failed` because the reasoning model spent its token budget before producing JSON. This is fixed here with low reasoning effort and a 4096 token budget, and that fix has not been re-run live. No results CSV exists yet; the first results go in the placeholder below.
+- **Verified:** the test suite (510 tests, all model calls mocked), the migration check against Postgres 16, and an end to end run against real Postgres and Redis with a faked scraper and a faked model.
+- **Live runs seen so far (author's machine):** a three company run with real Gemini and Groq. Peakflo (cluster B) and Cekura (cluster A) came out right, in the first person, with the conclusion first, and FDE roles were found on both. Simular (cluster G, no demo built) failed: two Gemini models returned a server error, then Groq returned a 400 `json_validate_failed` because the model broke its own JSON and left `pitch_note` out. Two weaknesses showed up. The notes embellished what the demos do, because the prompt gave only one line per demo, and the notes were generic, naming no customer. An earlier run also failed on Groq with `json_validate_failed` because the reasoning model spent its token budget before producing JSON, which was fixed with low reasoning effort and a 4096 token budget.
+- **Changes since that run, covered by mocked tests and NOT yet re-run live:** fixed fact sheets for the two demos, with a rule that the note may describe a demo only with those facts; a future tense rule for clusters with no demo built, so the note does not claim one; a required concrete detail from the site text; a second Groq model, `openai/gpt-oss-120b`, tried when the first fails; and logging of the status code and message of Gemini server errors. A results CSV exists on the author's machine but is not committed, so the Results placeholder below stays.
 - **Earlier live runs** on the author's machine exposed three problems: a company saved with every field `Not available`, a customer described as a device user group, and the same company saved twice under two domains. They are addressed in code and covered by mocked tests (junk answers are rejected, the prompt asks for the buyer type and reads the customers page, duplicates are merged on final domain), but not re-run live.
 
 To see a real result, follow [Reproduce the results](#reproduce-the-results) below; the output lands in `results/real_results.csv`.
@@ -345,12 +346,13 @@ For each job the worker tries providers in this order, and stops at the first an
 2. `gemini-3.1-flash-lite`
 3. `gemini-3.8-flash`
 4. Groq `openai/gpt-oss-20b`
+5. Groq `openai/gpt-oss-120b`
 
 **Gemini cooldowns.** A cooldown is a Redis key `cooldown:<model>` with an expiry. While the key exists the model is skipped and the next one is tried straight away. The cooldown lives in Redis, so it applies to every job, not just the one that hit the error. What each Gemini error does:
 
 | error | what happens |
 |---|---|
-| server error (5xx) or a timeout (30 seconds) | cooldown of 120 seconds, then the next model |
+| server error (5xx) or a timeout (30 seconds) | cooldown of 120 seconds, then the next model. A server error also logs its status code and message (cut to 200 characters), so repeated 5xx can be diagnosed |
 | 429 (rate limit or quota) | cooldown of 120 seconds, then the next model |
 | 404 (model not found) | cooldown of 3600 seconds, then the next model |
 | any other 4xx (bad request, bad key, no permission) | logged, no cooldown, then the next model |
@@ -358,7 +360,7 @@ For each job the worker tries providers in this order, and stops at the first an
 
 Because a bad key gets no cooldown, every job still pays a failed call to each Gemini model before it reaches Groq.
 
-**Groq.** If every Gemini model fails or is cooling down, the worker asks Groq. Groq has no cooldown. The request keeps the strict JSON schema and sets `reasoning_effort` to `low` and `max_completion_tokens` to 4096, because `openai/gpt-oss-20b` is a reasoning model and with the default budget it can spend everything on reasoning and return no JSON. If Groq returns a server error, a rate limit error, a connection error, a 400 (bad request), or JSON that does not fit the schema, there is nothing left to try and the job fails with `All models are currently busy, please retry in a minute.` A 400 is logged with its status and message only. Any other Groq error, such as a bad key, is not caught and the job fails with that error text, so a bad key stays loud.
+**Groq.** If every Gemini model fails or is cooling down, the worker asks Groq. Groq has no cooldown. It tries `openai/gpt-oss-20b` first and `openai/gpt-oss-120b` second. Each request keeps the strict JSON schema and sets `reasoning_effort` to `low` and `max_completion_tokens` to 4096, because these are reasoning models and with the default budget they can spend everything on reasoning and return no JSON. If a model returns a 400 (bad request), a 404, a server error, a rate limit error, a connection error, or JSON that does not fit the schema, the worker logs a line with the status and message only (cut to 200 characters, never headers or keys) and tries the next model. If both fail, the job fails with `All models are currently busy, please retry in a minute.` Any other Groq error, such as a bad key, is not caught and the job fails with that error text, so a bad key stays loud.
 
 The model that actually answered is saved in the `model` column. The pitch retry goes through the same provider order, so a different model can answer it.
 
@@ -376,7 +378,7 @@ The script works only inside a throwaway schema called `migration_check`, so it 
 
 ## Limits
 
-- **Little live evidence.** The tests mock the models. Only one live Gemini run has been seen, and the Groq fix and the new pitch note voice have not been re-run live, so the guard's false positive rate is unproven against the real APIs. See Status.
+- **Little live evidence.** The tests mock the models. Only a three company live run has been seen, and the fact sheets, the future tense rule, the second Groq model and the server error logging have not been re-run live, so the guard's false positive rate is unproven against the real APIs. See Status.
 - **The guard checks names, not facts.** A number written as digits must appear on the site, but an invented claim made of ordinary words, such as "cuts errors by half", passes. An invented name written in lower case passes too, and so does an invented name made only of words that each appear somewhere on the site.
 - **A name that opens a sentence is not caught by design**, unless the next word is `AI`, `Labs` or `Inc`. An invented one word company that starts a sentence passes.
 - **The guard checks `pitch_note` only.** `customer_pain`, `tailoring` and `cluster_reason` can still contain names the site never mentioned.

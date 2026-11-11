@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import groq
@@ -548,3 +549,157 @@ def test_groq_authentication_error_still_propagates(monkeypatch):
 
     with pytest.raises(groq.AuthenticationError):
         enrich.ask_groq("prompt")
+
+
+class ScriptedGroq:
+    """Answers each model in turn from a dict: an exception is raised, a string is returned as the message."""
+
+    def __init__(self, outcomes):
+        self.outcomes = outcomes
+        self.calls = []
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        outcome = self.outcomes[kwargs["model"]]
+        if isinstance(outcome, Exception):
+            raise outcome
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=outcome))])
+
+
+def groq_error(error_class, status):
+    response = httpx.Response(status, request=httpx.Request("POST", "https://api.groq.com/chat"))
+    return error_class(f"synthetic {status}", response=response, body=None)
+
+
+SMALL, BIG = enrich.GROQ_MODELS
+
+
+def test_groq_models_list_keeps_the_old_constant_as_the_first():
+    assert enrich.GROQ_MODELS == ["openai/gpt-oss-20b", "openai/gpt-oss-120b"]
+    assert enrich.GROQ_MODEL == enrich.GROQ_MODELS[0]
+
+
+def test_groq_bad_request_on_the_first_model_moves_to_the_second(monkeypatch, capsys):
+    fake = ScriptedGroq({SMALL: groq_bad_request(), BIG: COMPANY.model_dump_json()})
+    monkeypatch.setattr(enrich, "groq_client", fake)
+
+    assert enrich.ask_groq("prompt") == (COMPANY, "openai/gpt-oss-120b")
+
+    assert [call["model"] for call in fake.calls] == [SMALL, BIG]
+    out = capsys.readouterr().out
+    assert "400" in out
+    assert "json_validate_failed" in out
+
+
+def test_groq_answer_that_fails_validation_moves_to_the_second_model(monkeypatch):
+    too_few = COMPANY.model_copy(update={"tailoring": ["a", "b", "c"]}).model_dump()
+    too_few["tailoring"] = ["only one"]
+    fake = ScriptedGroq({SMALL: json.dumps(too_few), BIG: COMPANY.model_dump_json()})
+    monkeypatch.setattr(enrich, "groq_client", fake)
+
+    assert enrich.ask_groq("prompt") == (COMPANY, BIG)
+
+
+def test_groq_bad_json_moves_to_the_second_model(monkeypatch):
+    fake = ScriptedGroq({SMALL: "not json", BIG: COMPANY.model_dump_json()})
+    monkeypatch.setattr(enrich, "groq_client", fake)
+
+    assert enrich.ask_groq("prompt") == (COMPANY, BIG)
+
+
+def test_groq_not_found_on_the_first_model_moves_on(monkeypatch):
+    fake = ScriptedGroq({SMALL: groq_error(groq.NotFoundError, 404), BIG: COMPANY.model_dump_json()})
+    monkeypatch.setattr(enrich, "groq_client", fake)
+
+    assert enrich.ask_groq("prompt") == (COMPANY, BIG)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        groq_error(groq.InternalServerError, 500),
+        groq_error(groq.RateLimitError, 429),
+        groq.APIConnectionError(request=httpx.Request("POST", "https://api.groq.com/chat")),
+    ],
+)
+def test_groq_busy_errors_on_the_first_model_move_on(monkeypatch, error):
+    fake = ScriptedGroq({SMALL: error, BIG: COMPANY.model_dump_json()})
+    monkeypatch.setattr(enrich, "groq_client", fake)
+
+    assert enrich.ask_groq("prompt") == (COMPANY, BIG)
+
+
+def test_groq_both_models_failing_gives_none_and_the_job_ends_as_busy(monkeypatch):
+    use_fakes(monkeypatch, {model: client_error(429) for model in enrich.GEMINI_MODELS})
+    fake = ScriptedGroq({SMALL: groq_bad_request(), BIG: "not json"})
+    monkeypatch.setattr(enrich, "groq_client", fake)
+    monkeypatch.setattr(enrich, "get_description", lambda url: SITE)
+
+    assert enrich.ask_groq("prompt") == (None, None)
+    out = enrich.enrich("stripe.com")
+
+    assert "busy" in out["error"]
+    assert out["company"] is None
+
+
+def test_groq_authentication_error_on_the_first_model_propagates_without_trying_the_second(monkeypatch):
+    fake = ScriptedGroq({SMALL: groq_auth_error(), BIG: COMPANY.model_dump_json()})
+    monkeypatch.setattr(enrich, "groq_client", fake)
+
+    with pytest.raises(groq.AuthenticationError):
+        enrich.ask_groq("prompt")
+    assert len(fake.calls) == 1
+
+
+def test_groq_log_line_is_truncated_to_200_characters(monkeypatch, capsys):
+    long_error = groq.BadRequestError("x" * 500, response=httpx.Response(400, request=httpx.Request("POST", "https://api.groq.com/chat")), body=None)
+    fake = ScriptedGroq({SMALL: long_error, BIG: COMPANY.model_dump_json()})
+    monkeypatch.setattr(enrich, "groq_client", fake)
+
+    enrich.ask_groq("prompt")
+
+    out = capsys.readouterr().out
+    assert "x" * 200 in out
+    assert "x" * 201 not in out
+
+
+def test_every_groq_call_passes_reasoning_effort_and_the_token_budget(monkeypatch):
+    fake = ScriptedGroq({SMALL: groq_bad_request(), BIG: COMPANY.model_dump_json()})
+    monkeypatch.setattr(enrich, "groq_client", fake)
+
+    enrich.ask_groq("prompt")
+
+    for call in fake.calls:
+        assert call["reasoning_effort"] == "low"
+        assert call["max_completion_tokens"] == 4096
+        assert call["response_format"]["json_schema"]["strict"] is True
+
+
+def server_error(code, message):
+    return errors.ServerError(code, {"error": {"code": code, "message": message, "status": "UNAVAILABLE"}})
+
+
+def test_gemini_server_error_logs_the_code_and_message_and_cools_down(monkeypatch, capsys):
+    fake_redis, gemini = use_fakes(
+        monkeypatch, {FIRST: server_error(503, "The model is overloaded"), SECOND: COMPANY, THIRD: COMPANY}
+    )
+
+    assert enrich.ask_gemini("prompt") == (COMPANY, SECOND)
+
+    out = capsys.readouterr().out
+    assert f"{FIRST} returned a server error, cooling down for {enrich.COOLDOWN_SECONDS}s" in out
+    assert "503" in out
+    assert "The model is overloaded" in out
+    assert fake_redis.keys == {f"cooldown:{FIRST}": enrich.COOLDOWN_SECONDS}
+    assert gemini.calls == [FIRST, SECOND]
+
+
+def test_gemini_server_error_message_is_truncated_to_200_characters(monkeypatch, capsys):
+    use_fakes(monkeypatch, {FIRST: server_error(500, "y" * 500), SECOND: COMPANY, THIRD: COMPANY})
+
+    enrich.ask_gemini("prompt")
+
+    out = capsys.readouterr().out
+    assert "y" * 200 in out
+    assert "y" * 201 not in out
