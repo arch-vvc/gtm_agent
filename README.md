@@ -109,7 +109,7 @@ Fetch the result using the `company_id` from a finished job. `GET /companies` li
     "Name the personas after AP clerks and a finance controller",
     "Say GST and purchase order, not VAT and requisition"
   ],
-  "pitch_note": "Example AP is a strong fit for ... \n\nLoom: [LOOM_URL] Repo: [REPO_URL]",
+  "pitch_note": "Example AP automates accounts payable for finance teams, so a demo that flags every three way match mismatch fits its customers well.\n\nThe site says it automates accounts payable for finance teams, so wrong amounts and duplicates are a daily risk for them. The demo reads messy invoice, purchase order and payment exports and shows the rupees at risk.\n\nLoom: [LOOM_URL] Repo: [REPO_URL]",
   "pitch_error": null,
   "careers_url": "https://example-ap.test/careers",
   "hiring_fde": false
@@ -145,10 +145,9 @@ Hiring FDE: no
 
 ## Note
 
-Example AP is a strong fit for a demo that flags every three way match mismatch in messy exports.
+Example AP automates accounts payable for finance teams, so a demo that flags every three way match mismatch fits its customers well.
 
-The site says it automates accounts payable for finance teams, so wrong amounts and duplicates are a daily risk for its customers.
-The demo reads Tally and Zoho exports.
+The site says it automates accounts payable for finance teams, so wrong amounts and duplicates are a daily risk for them. The demo reads messy invoice, purchase order and payment exports and shows the rupees at risk.
 
 Loom: [LOOM_URL] Repo: [REPO_URL]
 
@@ -161,11 +160,12 @@ Loom: [LOOM_URL] Repo: [REPO_URL]
 
 `Hiring FDE` shows `yes`, `no` or `unknown`. The two placeholders `[LOOM_URL]` and `[REPO_URL]` are left in on purpose. Replace them with your own links before you send anything.
 
-There are three 404 cases, and each has its own `detail`:
+There are four 404 cases, and each has its own `detail`:
 
 1. No row with that id: `{"detail": "Company not found"}`
-2. The guard rejected the note twice, so there is none: `{"detail": "No pitch for this company: <pitch_error>"}`, where `<pitch_error>` is the stored reason.
-3. The row was enriched before the pitch engine existed: `{"detail": "No pitch for this company: it was enriched before the pitch engine existed"}`
+2. The row has a `pitch_error`, because the guard rejected the note twice: `{"detail": "No pitch for this company: <pitch_error>"}`, where `<pitch_error>` is the stored reason.
+3. An old row with no note, no `pitch_error` and no cluster, so it was enriched before the pitch engine existed: `{"detail": "No pitch for this company: it was enriched before the pitch engine existed"}`
+4. A row with a cluster but no note and no `pitch_error`: `{"detail": "No pitch for this company: no note was saved"}`. This should not happen in normal use, it means the row has pitch fields but the note was never stored.
 
 ## Clusters and demos
 
@@ -192,7 +192,7 @@ The pitch note may only name products, customers and tools that appear in the te
 
 If either check fails, the worker asks the model once more. The retry prompt is the original prompt plus the reason, for example `Your previous pitch_note was rejected for: names not found on the site: InvoiceGPT. Write every field again and fix this.`
 
-If the retry fails too, or returns nothing, the job does not fail. The structured fields (cluster, demo, customer pain, tailoring) are kept, `pitch_note` is stored as `null`, `pitch_error` says why, and the job is still `done`. The pitch endpoint then returns the second 404 case above.
+If the retry fails too, or returns nothing, the job does not fail. The structured fields (cluster, demo, customer pain, tailoring) are kept, `pitch_note` is stored as `null`, `pitch_error` says why, and the job is still `done`. The pitch endpoint then returns the second 404 case above (the one with the stored `pitch_error`).
 
 ## Careers page
 
@@ -249,7 +249,7 @@ docker compose run --rm worker /app/.venv/bin/python -m scripts.real_run --provi
 docker compose run --rm worker /app/.venv/bin/python -m scripts.real_run --provider groq peakflo.co
 ```
 
-For each URL it prints the full result as JSON (company fields, demo, model, pitch note, pitch error, careers URL, `hiring_fde`, error), which provider and model answered, and the pitch markdown. It prints a `WARNING` line when `pitch_note` is `null`, with the `pitch_error`. The exit code is non zero if any URL ended with an error. `--help` works without any keys set.
+For each URL it prints the full result as JSON (company fields, demo, model, pitch note, pitch error, careers URL, `hiring_fde`, error), which provider and model answered, and the pitch markdown. It prints a `WARNING` line when `pitch_note` is `null`, with the `pitch_error`. If a call raises, for example a bad API key or a 429, it prints an `ERROR: <exception class>: <message>` line and carries on with the next URL. The exit code is non zero if any URL ended with an error. `--help` works without any keys set.
 
 ## Limits
 

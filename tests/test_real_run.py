@@ -53,6 +53,29 @@ def test_warns_when_pitch_note_is_null(monkeypatch, capsys):
     assert "InvoiceGPT" in out
 
 
+def test_an_exception_from_one_url_does_not_stop_the_rest(monkeypatch, capsys):
+    seen = []
+
+    def fake_enrich(url):
+        seen.append(url)
+        if url == "first.example":
+            raise RuntimeError("API key not valid")
+        return real_enrich(url)
+
+    fake_models(monkeypatch, [(make_company("B", AP_NOTE), "gemini-3.5-flash")])
+    real_enrich = enrich.enrich
+    monkeypatch.setattr(enrich, "enrich", fake_enrich)
+
+    code = real_run.main(["first.example", "second.example"])
+
+    out = capsys.readouterr().out
+    assert seen == ["first.example", "second.example"]
+    assert "ERROR: RuntimeError: API key not valid" in out
+    assert "# Pitch for Ledgerly" in out
+    assert "1 of 2 URLs enriched" in out
+    assert code != 0
+
+
 def test_exit_code_is_non_zero_when_a_url_errors(monkeypatch, capsys):
     monkeypatch.setattr(enrich, "get_description", lambda url: {**AP_SITE, "error": "Site returned 403"})
 

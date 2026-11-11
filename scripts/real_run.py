@@ -15,7 +15,8 @@ has the keys and a Redis next to it:
     docker compose run --rm worker /app/.venv/bin/python -m scripts.real_run peakflo.co cekura.ai
 
 Outside Docker, point REDIS_HOST at a Redis you can reach. The exit code is non zero
-when any URL ended with an error.
+when any URL ended with an error. An exception on one URL, such as a bad API key or a
+429, is printed as an ERROR line and the remaining URLs still run.
 """
 
 import argparse
@@ -85,7 +86,13 @@ def markdown_row(out):
 def run_one(enrich, url):
     """Enrich one URL and print everything. Returns True when it worked."""
     print(f"\n===== {url} =====")
-    out = enrich.enrich(url)
+    try:
+        out = enrich.enrich(url)
+    except Exception as exc:  # noqa: BLE001
+        # Blind except on purpose: one bad URL must not stop the run.
+        # Only the class and the message are printed, never keys or environment values.
+        print(f"ERROR: {type(exc).__name__}: {exc}")
+        return False
 
     print(json.dumps(result_as_json(out), indent=2, ensure_ascii=False))
 
