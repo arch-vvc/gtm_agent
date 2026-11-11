@@ -201,7 +201,8 @@ def test_prompt_lists_cluster_g_with_its_label_and_the_classification_hint():
     prompt = prompt_for(DESKTOP_SITE)
 
     assert "G: computer use and desktop agents (no demo built yet)" in prompt
-    assert "Choose G for products that operate a computer, browser or desktop application on a person's behalf" in prompt
+    assert "Choose G only if the core of the product is an agent that controls a screen, browser or desktop app by clicking and typing" in prompt
+    assert "belong in A, B, E or F" in prompt
     # Only the built demos are described, so G has no demo line.
     assert "G: computer use" in prompt.split("These are the demos that exist:")[0]
     assert "computer use" not in prompt.split("These are the demos that exist:")[1]

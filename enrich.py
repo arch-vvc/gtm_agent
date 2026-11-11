@@ -230,7 +230,7 @@ For target_customer, never answer with a device, operating system or a generic u
 
 cluster: pick the one letter that best fits the company.
 {labels}
-Choose G for products that operate a computer, browser or desktop application on a person's behalf (computer use agents, desktop automation, RPA replacement).
+Choose G only if the core of the product is an agent that controls a screen, browser or desktop app by clicking and typing (computer use, desktop automation, RPA replacement). A normal SaaS product with a web app, voice agents, and dev or infra tools belong in A, B, E or F, not G.
 
 cluster_reason: one sentence that quotes the site's own words.
 customer_pain: one sentence, grounded in the text, about the deployment pain the company's customers have.
