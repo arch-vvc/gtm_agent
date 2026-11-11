@@ -38,7 +38,7 @@ FOOTNOTE = (
     "They do not prove a note is true, read every note before sending it._"
 )
 # U+2010 to U+2015 (hyphen, non breaking hyphen, figure dash, en dash, em dash, horizontal bar) and U+2212 (minus).
-DASH_LIKE = re.compile("[‐-―−]")
+DASH_LIKE = re.compile("[\u2010-\u2015\u2212]")
 SPACED_HYPHEN = re.compile(r"\s-\s")
 FORMULA_GUARD = re.compile(r"^'(?=[=+\-@])")
 

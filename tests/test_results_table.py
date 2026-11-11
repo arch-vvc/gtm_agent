@@ -23,7 +23,7 @@ COLUMNS = [
     "model",
     "error",
 ]
-BAD_DASHES = re.compile("[‐-―−]")
+BAD_DASHES = re.compile("[\u2010-\u2015\u2212]")
 NOTE = "I built demo A for voice teams.\n\nLoom: [LOOM_URL] Repo: [REPO_URL]"
 
 
@@ -108,7 +108,7 @@ def test_pipes_are_escaped_and_newlines_collapse():
     assert "\n" not in line
 
 
-@pytest.mark.parametrize("char", ["‑", "–", "—", "−"])
+@pytest.mark.parametrize("char", ["\u2011", "\u2013", "\u2014", "\u2212"])
 def test_dash_like_characters_never_reach_the_output(char):
     row = make_row(name=f"A{char}B", cluster_reason=f"x {char} y", error=f"e{char}f", pitch_note=f"p{char}q")
 
