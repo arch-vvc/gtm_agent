@@ -1,4 +1,6 @@
 import os
+import re
+import string
 
 import groq
 import httpx
@@ -85,6 +87,37 @@ def ask(prompt):
     return None, None
 
 
+JUNK_ANSWERS=[
+    "not available",
+    "n/a",
+    "na",
+    "unknown",
+    "not specified",
+    "unspecified",
+    "none",
+    "no information",
+    "not provided",
+    "unavailable",
+]
+# A junk phrase counts when it is the whole answer or starts the answer as whole words,
+# so "Not available, see site" is junk but "Nathan's bakeries" is not.
+JUNK_PATTERN=re.compile("^(" + "|".join(re.escape(phrase) for phrase in JUNK_ANSWERS) + r")(\W|$)")
+
+
+def is_junk(value):
+    cleaned=value.strip().strip(string.punctuation).strip().lower()
+    return bool(JUNK_PATTERN.match(cleaned))
+
+
+def junk_fields(company):
+    fields={
+        "industry": company.industry,
+        "what_they_sell": company.what_they_sell,
+        "target_customer": company.target_customer,
+    }
+    return [field for field, value in fields.items() if is_junk(value)]
+
+
 def result(name, company=None, model=None, error=None):
     return {"name": name, "company": company, "model": model, "error": error}
 
@@ -101,18 +134,31 @@ def enrich(url):
     if site["description"] is None and site["about"] is None:
         return result(name, error="No description could be found")
 
-    prompt=f"""Here is information from a company's website.
-Title: {site["title"]}
-Description: {site["description"] or "Not available"}
-About page: {site["about"] or "Not available"}
-
-Fill in the fields using only this information.
-Be specific: name the actual product or service and the actual type of customer."""
+    lines=["Here is information from a company's website.", f"Title: {site['title']}"]
+    if site["description"]:
+        lines.append(f"Description: {site['description']}")
+    if site["about"]:
+        lines.append(f"About page: {site['about']}")
+    lines.append("")
+    lines.append("Fill in the fields using only this information.")
+    lines.append("If a field cannot be determined from this information, answer exactly UNKNOWN for that field.")
+    lines.append("Be specific: name the actual product or service and the actual type of customer.")
+    prompt="\n".join(lines)
 
     print("Asking LLM")
     company, model=ask(prompt)
     if company is None:
         return result(name, error="All models are currently busy, please retry in a minute.")
+
+    missing=junk_fields(company)
+    if missing:
+        return result(
+            name,
+            error=(
+                f"The model could not fill in {', '.join(missing)} from the site text "
+                "(it answered 'Not available'). The site gave too little to go on, please check the site manually."
+            ),
+        )
     return result(name, company=company, model=model)
 
 
