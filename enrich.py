@@ -17,6 +17,7 @@ from scrape import get_description
 REDIS_HOST=os.environ.get("REDIS_HOST", "redis")
 r=redis.Redis(host=REDIS_HOST, decode_responses=True, socket_timeout=30)
 COOLDOWN_SECONDS=120
+NOT_FOUND_COOLDOWN_SECONDS=3600
 
 gemini_client=genai.Client(http_options=types.HttpOptions(timeout=30000))
 groq_client=Groq(timeout=30)
@@ -90,7 +91,27 @@ def ask_gemini(prompt):
         except httpx.TimeoutException:
             print(f"{model} timed out, cooling down for {COOLDOWN_SECONDS}s")
             r.set(f"cooldown:{model}", 1, ex=COOLDOWN_SECONDS)
+        except errors.ClientError as error:
+            handle_client_error(model, error)
     return None, None
+
+
+def handle_client_error(model, error):
+    """Log a 4xx answer from Gemini and cool the model down when waiting can help.
+
+    A 429 is a rate limit or quota, so it gets the normal cooldown. A 404 means
+    the model name is wrong, which will not fix itself soon, so it gets a long
+    cooldown. Other codes (bad request, bad key, no permission) do not cool the
+    model down. Only the code and the error text are logged, never the request.
+    """
+    if error.code == 429:
+        print(f"{model} is rate limited (429: {error.message}), cooling down for {COOLDOWN_SECONDS}s")
+        r.set(f"cooldown:{model}", 1, ex=COOLDOWN_SECONDS)
+    elif error.code == 404:
+        print(f"{model} was not found (404: {error.message}), cooling down for {NOT_FOUND_COOLDOWN_SECONDS}s")
+        r.set(f"cooldown:{model}", 1, ex=NOT_FOUND_COOLDOWN_SECONDS)
+    else:
+        print(f"{model} rejected the request ({error.code}: {error.message}), trying the next model")
 
 
 def ask_groq(prompt):
