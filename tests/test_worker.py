@@ -36,7 +36,16 @@ def use_fake_connection(monkeypatch, rows):
 
 RESULT = {
     "name": "Stripe",
-    "company": Company(industry="Fintech", what_they_sell="Payment APIs", target_customer="Online businesses"),
+    "company": Company(
+        industry="Fintech",
+        what_they_sell="Payment APIs",
+        target_customer="Online businesses",
+        cluster="F",
+        cluster_reason="The site sells payment APIs.",
+        customer_pain="Online businesses need to accept payments.",
+        tailoring=["Use card sample data", "Name personas after merchants", "Say payouts"],
+        pitch_note="Stripe fits.\n\nLoom: [LOOM_URL] Repo: [REPO_URL]",
+    ),
     "model": "fake-model",
     "error": None,
 }
