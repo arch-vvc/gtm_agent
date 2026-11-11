@@ -4,7 +4,7 @@ gtm_agent is a pitch engine for forward deployed engineer (FDE) outreach. You gi
 
 ## Status
 
-- **Verified:** the test suite (547 tests, all model calls mocked), the migration check against Postgres 16, and an end to end run against real Postgres and Redis with a faked scraper and a faked model.
+- **Verified:** the test suite (566 tests, all model calls mocked), the migration check against Postgres 16, and an end to end run against real Postgres and Redis with a faked scraper and a faked model.
 - **Latest live run (author's machine, real Gemini and Groq):** Peakflo (cluster B) and Cekura (cluster A) were enriched. Simular failed: two Gemini models returned 503 "high demand" (a capacity error on Google's side), a third was cooling down, and the Groq `openai/gpt-oss-20b` model answered `UNKNOWN` for industry. The junk check then failed the job without trying the second Groq model, `openai/gpt-oss-120b`.
 - **Problem seen in that run, fixed and NOT yet re-run live:** Cekura's note claimed past work ("I adapted the simulation engine") that the demo fact sheet does not support. The guard checks names and figures, not claims. Two fixes are covered by mocked tests: a junk answer now counts as a failed attempt and falls through to the next model, and a deterministic check rejects first person past tense work claims other than "I built" and rejects "I built" for clusters with no demo built, so the retry prompt names the problem.
 - **Earlier problems, fixed and NOT yet re-run live:** two first drafts were rejected by the guard because it did not accept figures from the author's own demo fact sheet, and one note invented a deadline. Both are covered by mocked tests.
@@ -16,11 +16,15 @@ To see a real result, follow [Reproduce the results](#reproduce-the-results) bel
 
 ## Results
 
+<!-- results:start -->
 > PLACEHOLDER (replace before sending to anyone): the real results go here. Run the commands in "Reproduce the results" below, commit the output as `results/real_results.csv`, then replace the skeleton table with a few rows from that file. Failures are shown, not hidden: keep rows where a note was rejected or the model answered badly. Nothing in this section is a real result yet.
 
 | company | cluster | demo | hiring FDE | cluster_reason (quoted from the site) | first line of the note | what went wrong |
 |---|---|---|---|---|---|---|
 | PLACEHOLDER | | | | | | |
+<!-- results:end -->
+
+To refresh the table after a run, commit `results/real_results.csv` and run `uv run python -m scripts.results_table --write-readme`. It replaces only the block between the results markers. `uv run python -m scripts.results_table --check` verifies that the README matches the CSV.
 
 When you read the CSV, look for a wrong cluster (compare `cluster_reason` with what the company really does), rows where `pitch_note` is empty and `pitch_error` says the guard rejected it, and junk answers in `customer_pain` or `tailoring`.
 
@@ -60,6 +64,8 @@ REDIS_HOST=localhost uv run python -m scripts.real_run --csv results/real_result
 ```
 
 Remove the Redis afterwards with `docker rm -f gtm-redis`.
+
+The last step, for both options: commit `results/real_results.csv`, then run `uv run python -m scripts.results_table --write-readme` to turn it into the table in the Results section.
 
 ### Options for both
 

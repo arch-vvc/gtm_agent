@@ -633,3 +633,31 @@ def test_claims_built_demo_matches_the_three_forms():
     assert pitch.claims_built_demo("I have built it")
     assert pitch.claims_built_demo("I've built it")
     assert not pitch.claims_built_demo("I would build it")
+
+
+def test_claims_flag_an_adverb_between_the_subject_and_the_verb():
+    for sentence in (
+        "I also adapted the engine.",
+        "I just wrote new scenarios.",
+        "I then integrated the callers.",
+        "I had adapted the scenarios.",
+        "I have already configured the personas.",
+        "I've recently tailored the demo.",
+        "I personally set up the dashboard.",
+    ):
+        assert pitch.check_pitch_claims(sentence), sentence
+    assert "'I also adapted'" in pitch.check_pitch_claims("I also adapted the engine.")[0]
+
+
+def test_claims_allow_would_with_an_adverb():
+    for sentence in ("I also would adapt the engine.", "I would also adapt the engine."):
+        assert pitch.check_pitch_claims(sentence) == [], sentence
+
+
+def test_claims_are_fast_on_a_long_note():
+    import time
+
+    note = "I also have just then I " * 2500
+    started = time.perf_counter()
+    pitch.check_pitch_claims(note)
+    assert time.perf_counter() - started < 2
