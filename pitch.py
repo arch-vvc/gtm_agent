@@ -41,10 +41,32 @@ CURLY_APOSTROPHE = chr(0x2019)
 # Capitalised words that may appear in a note without being on the site.
 # Stored lower case. Tally, Zoho and Hinglish are deliberately absent: a note
 # may name them only when the target's own site does.
+# Rule for adding a word: only words that are never plausible parts of a product
+# or customer name. Words like best, kind, dear, regards, most, one and yet are
+# excluded because Best Buy, Kind Snacks or Dear Health would slip through.
+# Together, today, next, two and three are excluded too (Together AI, Two Sigma,
+# Three the telecom).
+# Accepted residual risk: first, second, third and the other ordinals stay
+# allowed, because they are exactly the openers the model writes for "conclusion
+# first, then 2 or 3 reasons", and rejecting them would reject grounded notes.
+# So a real name made only of allowlisted words (for example First Round or
+# First Data) is not caught unless a non allowlisted word in it is. This is a
+# deliberate trade off against false rejections of grounded notes.
 ALLOWED_WORDS = frozenset(
     {
-        # sentence starters and pronouns
-        "the", "we", "i", "you", "your", "this", "their", "our", "it", "hi", "thanks",
+        # ordinals and connectives
+        "first", "firstly", "second", "secondly", "third", "thirdly", "finally", "lastly",
+        "then", "also", "additionally", "moreover", "however", "therefore",
+        "overall", "because", "since", "although", "while", "when",
+        "if", "and", "but", "so", "or",
+        # prepositions and articles
+        "the", "with", "without", "for", "from", "in", "on", "at", "by", "to", "of",
+        "as", "a", "an", "that", "these", "those", "some", "many", "each", "every",
+        "here", "there",
+        # pronouns
+        "we", "i", "you", "your", "this", "their", "our", "it", "they", "he", "she",
+        # greetings
+        "hi", "thanks", "please", "hello",
         # months
         "january", "february", "march", "april", "may", "june", "july",
         "august", "september", "october", "november", "december",
