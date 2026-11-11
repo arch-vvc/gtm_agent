@@ -1,14 +1,17 @@
-from google import genai
-from google.genai import types
-import httpx
-from google.genai import errors
-from groq import Groq
-import groq
-from pydantic import BaseModel
-from scape import get_description
-import redis
+import os
 
-r=redis.Redis(host="redis", decode_responses=True, socket_timeout=30)
+import groq
+import httpx
+import redis
+from google import genai
+from google.genai import errors, types
+from groq import Groq
+from pydantic import BaseModel
+
+from scrape import get_description
+
+REDIS_HOST=os.environ.get("REDIS_HOST", "redis")
+r=redis.Redis(host=REDIS_HOST, decode_responses=True, socket_timeout=30)
 COOLDOWN_SECONDS=120
 
 gemini_client=genai.Client(http_options=types.HttpOptions(timeout=30000))

@@ -1,16 +1,34 @@
-from fastapi import FastAPI
-from fastapi import HTTPException
-from pydantic import BaseModel
-from psycopg.rows import dict_row
-from scape import normalise_url
+import os
+import uuid
+from contextlib import asynccontextmanager
+from pathlib import Path
+
 import psycopg
 import redis
-import uuid
-import os
+from fastapi import FastAPI, HTTPException
+from psycopg.rows import dict_row
+from pydantic import BaseModel
 
-app=FastAPI()
+from scrape import normalise_url
+
 DB_URL=os.environ["DB_URL"]
-r=redis.Redis(host="redis", decode_responses=True)
+REDIS_HOST=os.environ.get("REDIS_HOST", "redis")
+SCHEMA_FILE=Path(__file__).with_name("schema.sql")
+r=redis.Redis(host=REDIS_HOST, decode_responses=True)
+
+
+def create_tables():
+    with psycopg.connect(DB_URL) as conn:
+        conn.execute(SCHEMA_FILE.read_text())
+
+
+@asynccontextmanager
+async def lifespan(app):
+    create_tables()
+    yield
+
+
+app=FastAPI(lifespan=lifespan)
 
 
 class EnrichRequest(BaseModel):

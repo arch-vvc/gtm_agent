@@ -1,10 +1,10 @@
 [project]
 name = "gtm-agent"
 version = "0.1.0"
-description = "Add your description here"
+description = "Company enrichment API: scrapes a website and uses Gemini, with a Groq fallback, to fill in industry, what they sell and who they sell to."
 readme = "README.md"
 authors = [
-    { name = "arch-vvc", email = "pes1ug23am062@pesu.pes.edu" }
+    { name = "arch-vvc", email = "archit.rishabh25@gmail.com" }
 ]
 requires-python = ">=3.13"
 dependencies = [
@@ -29,5 +29,10 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "pytest>=8.3.0",
     "ruff>=0.17.2",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

@@ -1,7 +1,8 @@
 import re
+from urllib.parse import urljoin, urlparse
+
 import httpx
 from bs4 import BeautifulSoup
-from urllib.parse import urlparse, urljoin
 
 headers={
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"

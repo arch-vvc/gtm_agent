@@ -8,6 +8,11 @@ services:
       - "5432:5432"
     volumes:
       - gtm_pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d gtm"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
 
   redis:
     image: redis:7
@@ -16,6 +21,11 @@ services:
     build: .
     env_file:
       - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
     ports:
       - "8000:8000"
 
@@ -23,6 +33,11 @@ services:
     build: .
     env_file:
       - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
     command: ["/app/.venv/bin/python", "worker.py"]
     restart: unless-stopped
 
