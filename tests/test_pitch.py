@@ -228,16 +228,34 @@ NEW_ALLOWED_WORDS = [
     "First", "Firstly", "Second", "Secondly", "Third", "Thirdly", "Finally", "Lastly",
     "Next", "Then", "Also", "Additionally", "Moreover", "However", "Therefore",
     "Overall", "Together", "Today", "Because", "Since", "Although", "While", "When",
-    "If", "And", "But", "So", "Or", "Yet", "With", "Without", "For", "From", "In",
+    "If", "And", "But", "So", "Or", "With", "Without", "For", "From", "In",
     "On", "At", "By", "To", "Of", "As", "A", "An", "That", "These", "Those", "Some",
-    "Many", "Most", "Each", "Every", "One", "Two", "Three", "Here", "There", "They",
-    "He", "She", "Please", "Best", "Regards", "Kind", "Dear", "Hello",
+    "Many", "Each", "Every", "Two", "Three", "Here", "There", "They",
+    "He", "She", "Please", "Hello",
 ]  # fmt: skip
+
+# Words that can be real product or customer names (Best Buy, Kind Snacks, Dear Health).
+NAME_LIKE_WORDS = ["Best", "Kind", "Dear", "Regards", "Most", "One", "Yet"]
 
 
 @pytest.mark.parametrize("word", NEW_ALLOWED_WORDS)
 def test_new_allowed_words_are_present(word):
+    # Explicit literals above, deliberately not a copy of the module list.
     assert word.lower() in pitch.ALLOWED_WORDS
+
+
+@pytest.mark.parametrize("word", NAME_LIKE_WORDS)
+def test_name_like_words_are_not_allowlisted(word):
+    assert word.lower() not in pitch.ALLOWED_WORDS
+
+
+def test_best_buy_is_flagged_when_not_in_corpus():
+    names = pitch.ungrounded_names("Best Buy integrates with your stack.", "Goodco invoices")
+    assert names == ["Best", "Buy"]
+
+
+def test_best_buy_is_accepted_when_in_corpus():
+    assert pitch.ungrounded_names("Best Buy integrates with your stack.", "Best Buy is a customer") == []
 
 
 def test_every_allowed_word_is_one_plain_lower_case_word():

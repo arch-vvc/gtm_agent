@@ -41,20 +41,26 @@ CURLY_APOSTROPHE = chr(0x2019)
 # Capitalised words that may appear in a note without being on the site.
 # Stored lower case. Tally, Zoho and Hinglish are deliberately absent: a note
 # may name them only when the target's own site does.
+# Rule for adding a word: only words that are never plausible parts of a product
+# or customer name. Words like best, kind, dear, regards, most, one and yet are
+# excluded because Best Buy, Kind Snacks or Dear Health would slip through.
 ALLOWED_WORDS = frozenset(
     {
-        # sentence starters and pronouns
-        "the", "we", "i", "you", "your", "this", "their", "our", "it", "hi", "thanks",
-        # sentence openers and connectives that are never product or customer names
+        # ordinals and connectives
         "first", "firstly", "second", "secondly", "third", "thirdly", "finally", "lastly",
         "next", "then", "also", "additionally", "moreover", "however", "therefore",
         "overall", "together", "today", "because", "since", "although", "while", "when",
-        "if", "and", "but", "so", "or", "yet", "with", "without", "for", "from", "in",
-        "on", "at", "by", "to", "of", "as", "a", "an", "that", "these", "those", "some",
-        "many", "most", "each", "every", "one", "two", "three", "here", "there", "they",
-        "he", "she",
-        # greetings and sign offs
-        "please", "best", "regards", "kind", "dear", "hello",
+        "if", "and", "but", "so", "or",
+        # prepositions and articles
+        "the", "with", "without", "for", "from", "in", "on", "at", "by", "to", "of",
+        "as", "a", "an", "that", "these", "those", "some", "many", "each", "every",
+        "here", "there",
+        # number words
+        "two", "three",
+        # pronouns
+        "we", "i", "you", "your", "this", "their", "our", "it", "they", "he", "she",
+        # greetings
+        "hi", "thanks", "please", "hello",
         # months
         "january", "february", "march", "april", "may", "june", "july",
         "august", "september", "october", "november", "december",
