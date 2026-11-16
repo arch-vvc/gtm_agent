@@ -113,6 +113,8 @@ curl localhost:8000/companies/<company_id>/pitch
 
 Useful commands: `docker compose logs app worker` to see output, `docker compose down` to stop (data is kept in the `gtm_pgdata` volume).
 
+The default database password is for local use only; set `POSTGRES_PASSWORD` in `.env` to change it.
+
 ## API
 
 ### POST /enrich
