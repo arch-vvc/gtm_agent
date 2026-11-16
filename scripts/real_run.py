@@ -2,7 +2,8 @@
 
 Usage from the repo root:
 
-    python -m scripts.real_run [--provider gemini|groq|all] [--csv PATH] URL [URL ...]
+    python -m scripts.real_run [--provider gemini|groq|all] [--csv PATH] [--file PATH]
+                               [--resume] [--delay SECONDS] [URL ...]
 
 This calls enrich.enrich(url) directly. Nothing is written to Postgres and no job
 is queued. With --csv PATH it also writes one row per URL (errors included) to a CSV
@@ -26,9 +27,11 @@ import json
 import os
 import re
 import sys
+import time
 from pathlib import Path
 
 import pitch
+from scrape import normalise_url
 
 
 def parse_args(argv):
@@ -51,11 +54,82 @@ def parse_args(argv):
             "so spreadsheets do not run it as a formula."
         ),
     )
-    parser.add_argument("urls", metavar="URL", nargs="+", help="company website, for example peakflo.co")
+    parser.add_argument(
+        "--file",
+        metavar="PATH",
+        help=(
+            "read URLs from this text file, one per line. Blank lines and lines starting with # are ignored. "
+            "Combined with any URLs given as arguments; duplicates are dropped and the first is kept."
+        ),
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help=(
+            "needs --csv. When the CSV already exists, skip URLs that have a row with no error, "
+            "retry the rest and keep the finished rows."
+        ),
+    )
+    parser.add_argument(
+        "--delay",
+        metavar="SECONDS",
+        type=float,
+        default=DEFAULT_DELAY,
+        help=f"wait this long between companies so a long list stays inside the free tiers (default: {DEFAULT_DELAY:g})",
+    )
+    parser.add_argument("urls", metavar="URL", nargs="*", help="company website, for example peakflo.co")
     args = parser.parse_args(argv)
     if args.csv and Path(args.csv).is_dir():
         parser.error(f"--csv {args.csv} is a directory, give a file path")
+    if args.resume and not args.csv:
+        parser.error("--resume needs --csv, so there is a file to resume from")
+    if args.delay < 0:
+        parser.error("--delay cannot be negative")
+    file_urls = []
+    if args.file:
+        try:
+            file_urls = read_url_file(args.file)
+        except OSError as exc:
+            parser.error(f"cannot read --file {args.file}: {exc.strerror or exc}")
+        if not file_urls:
+            parser.error(f"--file {args.file} has no URLs (only blank lines and comments)")
+    args.urls = dedupe_urls(args.urls + file_urls)
+    if not args.urls:
+        parser.error("give at least one URL, or --file PATH")
     return args
+
+
+def url_key(url):
+    """Normalised form used to spot duplicates and finished rows."""
+    return normalise_url(url) or url.strip().lower()
+
+
+def dedupe_urls(urls):
+    seen = set()
+    kept = []
+    for url in urls:
+        key = url_key(url)
+        if key not in seen:
+            seen.add(key)
+            kept.append(url)
+    return kept
+
+
+def read_url_file(path):
+    """URLs from a text file: one per line, blanks and # comments ignored, duplicates dropped."""
+    with open(path, encoding="utf-8") as handle:
+        lines = [line.strip() for line in handle]
+    return dedupe_urls([line for line in lines if line and not line.startswith("#")])
+
+
+def read_finished_rows(path):
+    """Rows of an existing results CSV that have no error, as lists in CSV_COLUMNS order."""
+    path = Path(path)
+    if not path.exists():
+        return []
+    with open(path, encoding="utf-8", newline="") as handle:
+        records = list(csv.DictReader(handle))
+    return [[record.get(column, "") for column in CSV_COLUMNS] for record in records if record.get("url") and not record.get("error")]
 
 
 def choose_providers(enrich, provider):
@@ -115,6 +189,8 @@ CSV_COLUMNS = [
     "error",
 ]
 
+
+DEFAULT_DELAY = 5
 
 SECRET_ENV_WORDS = ("KEY", "TOKEN", "SECRET", "PASSWORD")
 SECRET_SHAPES = [
@@ -186,14 +262,15 @@ def csv_row(url, out=None, error=None):
     return [cell(row.get(column)) for column in CSV_COLUMNS]
 
 
-def write_csv(path, rows):
+def write_csv(path, rows, announce=True):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
         writer.writerow(CSV_COLUMNS)
         writer.writerows(rows)
-    print(f"\nCSV written to {path} ({len(rows)} rows)")
+    if announce:
+        print(f"\nCSV written to {path} ({len(rows)} rows)")
 
 
 def run_one(enrich, url, rows):
@@ -235,7 +312,22 @@ def main(argv=None):
     enrich.PROVIDERS = choose_providers(enrich, args.provider)
 
     rows = []
-    results = [run_one(enrich, url, rows) for url in args.urls]
+    todo = args.urls
+    if args.resume:
+        rows = read_finished_rows(args.csv)
+        finished = {url_key(row[0]) for row in rows}
+        todo = [url for url in args.urls if url_key(url) not in finished]
+        print(f"Resuming: {len(args.urls) - len(todo)} already done, {len(todo)} to run")
+
+    results = []
+    for number, url in enumerate(todo, start=1):
+        if number > 1 and args.delay > 0:
+            time.sleep(args.delay)
+        print(f"\n{number} of {len(todo)}")
+        results.append(run_one(enrich, url, rows))
+        if args.csv:
+            # Written after every company so a stopped run keeps its progress for --resume.
+            write_csv(args.csv, rows, announce=False)
     failed = results.count(False)
     print(f"\n{len(results) - failed} of {len(results)} URLs enriched")
     if args.csv:

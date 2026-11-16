@@ -1,4 +1,6 @@
+import ipaddress
 import re
+import socket
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -19,6 +21,100 @@ def normalise_url(url):
         return None
     path=parsed.path.rstrip("/")
     return "https://"+host+path
+
+
+REFUSED_MESSAGE="Refused: not a public web address"
+ALLOWED_PORTS={80, 443}
+MAX_REDIRECTS=5
+MAX_BODY_BYTES=2*1024*1024
+REDIRECT_STATUSES={301, 302, 303, 307, 308}
+BLOCKED_HOST_SUFFIXES=(".local", ".internal", ".localhost")
+# Tests set this to an httpx.MockTransport so nothing touches the network.
+DEFAULT_TRANSPORT=None
+
+
+class RefusedURL(Exception):
+    def __init__(self):
+        super().__init__(REFUSED_MESSAGE)
+
+
+class FetchedPage:
+    """The parts of a response the scraper uses, with the body already capped."""
+
+    def __init__(self, status_code, url, text):
+        self.status_code=status_code
+        self.url=url
+        self.text=text
+
+    @property
+    def is_error(self):
+        return self.status_code >= 400
+
+
+def resolve_host(host):
+    """Every address a host resolves to, as strings. Raises OSError when it does not resolve."""
+    return [info[4][0] for info in socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)]
+
+
+def is_public_address(address):
+    ip=ipaddress.ip_address(address.split("%")[0])
+    if ip.version == 6 and ip.ipv4_mapped is not None:
+        ip=ip.ipv4_mapped
+    return ip.is_global and not ip.is_multicast
+
+
+def check_public_url(url, resolver=None):
+    """Raise RefusedURL unless the URL is http(s) on port 80 or 443 and every address of its host is public."""
+    resolver=resolver or resolve_host
+    try:
+        parsed=urlparse(url)
+        port=parsed.port
+    except ValueError:
+        raise RefusedURL() from None
+    host=(parsed.hostname or "").lower().rstrip(".")
+    if parsed.scheme not in ("http", "https") or not host:
+        raise RefusedURL()
+    if port is not None and port not in ALLOWED_PORTS:
+        raise RefusedURL()
+    if host == "localhost" or host.endswith(BLOCKED_HOST_SUFFIXES):
+        raise RefusedURL()
+    try:
+        addresses=[str(ipaddress.ip_address(host))]
+    except ValueError:
+        try:
+            addresses=resolver(host)
+        except OSError as error:
+            raise httpx.ConnectError(f"Could not resolve {host}") from error
+    if not addresses or not all(is_public_address(address) for address in addresses):
+        raise RefusedURL()
+
+
+def read_capped(response):
+    body=bytearray()
+    for chunk in response.iter_bytes():
+        body.extend(chunk)
+        if len(body) >= MAX_BODY_BYTES:
+            del body[MAX_BODY_BYTES:]
+            break
+    return bytes(body).decode(response.encoding or "utf-8", errors="replace")
+
+
+def fetch(url, resolver=None, transport=None):
+    """GET a page. Checks the first URL and every redirect hop, follows at most 5, reads at most 2 MB.
+
+    Raises RefusedURL for a non public address and an httpx error for anything unreachable.
+    """
+    transport=transport or DEFAULT_TRANSPORT
+    with httpx.Client(headers=headers, timeout=10, follow_redirects=False, transport=transport) as client:
+        for _ in range(MAX_REDIRECTS+1):
+            check_public_url(url, resolver)
+            with client.stream("GET", url) as response:
+                location=response.headers.get("location")
+                if response.status_code in REDIRECT_STATUSES and location:
+                    url=str(httpx.URL(url).join(location))
+                    continue
+                return FetchedPage(response.status_code, response.url, read_capped(response))
+    raise httpx.TooManyRedirects(f"More than {MAX_REDIRECTS} redirects")
 
 
 def host_of(url):
@@ -61,8 +157,8 @@ def get_about_text(about_url):
     if about_url is None:
         return None
     try:
-        response=httpx.get(about_url, headers=headers, follow_redirects=True, timeout=10)
-    except httpx.HTTPError:
+        response=fetch(about_url)
+    except (httpx.HTTPError, RefusedURL):
         return None
     
     if response.is_error:
@@ -103,8 +199,8 @@ def get_careers_text(careers_url):
     if careers_url is None:
         return None
     try:
-        response=httpx.get(careers_url, headers=headers, follow_redirects=True, timeout=10)
-    except httpx.HTTPError:
+        response=fetch(careers_url)
+    except (httpx.HTTPError, RefusedURL):
         return None
 
     if response.is_error:
@@ -176,8 +272,8 @@ def get_customers_text(customers_url):
     if customers_url is None:
         return None
     try:
-        response=httpx.get(customers_url, headers=headers, follow_redirects=True, timeout=10)
-    except httpx.HTTPError:
+        response=fetch(customers_url)
+    except (httpx.HTTPError, RefusedURL):
         return None
 
     if response.is_error:
@@ -221,13 +317,18 @@ def failed_description(url, name, domain, error):
 
 
 def get_description(url):
+    raw_url=url
     url=normalise_url(url)
+    if url is None:
+        return failed_description(raw_url, name_from_host(urlparse(raw_url if "://" in raw_url else "//"+raw_url).hostname or ""), "", REFUSED_MESSAGE)
 
     name=name_from_host(urlparse(url).hostname or "")
     input_domain=host_of(url)
 
     try:
-        response=httpx.get(url, headers=headers, follow_redirects=True, timeout=10)
+        response=fetch(url)
+    except RefusedURL:
+        return failed_description(url, name, input_domain, REFUSED_MESSAGE)
     except httpx.HTTPError:
         return failed_description(url, name, input_domain, "Could not reach site")
 

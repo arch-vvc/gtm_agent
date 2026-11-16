@@ -7,6 +7,11 @@ from scripts import real_run
 from tests.test_pitch_engine import AP_NOTE, AP_SITE, INVENTED_NOTE, make_company
 
 
+@pytest.fixture(autouse=True)
+def no_delay_between_companies(monkeypatch):
+    monkeypatch.setattr(real_run.time, "sleep", lambda seconds: None)
+
+
 def fake_models(monkeypatch, answers):
     monkeypatch.setattr(enrich, "get_description", lambda url: AP_SITE)
     remaining = list(answers)
