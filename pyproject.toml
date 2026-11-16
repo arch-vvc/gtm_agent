@@ -1,7 +1,7 @@
 [project]
 name = "gtm-agent"
 version = "0.1.0"
-description = "Company enrichment API: scrapes a website and uses Gemini, with a Groq fallback, to fill in industry, what they sell and who they sell to."
+description = "Pitch engine for forward deployed engineer outreach: scrapes a startup site, asks Gemini (Groq as fallback) for its cluster, deployment pain and a grounded pitch note."
 readme = "README.md"
 authors = [
     { name = "arch-vvc", email = "archit.rishabh25@gmail.com" }
@@ -20,12 +20,8 @@ dependencies = [
     "uvicorn>=0.54.0",
 ]
 
-[project.scripts]
-gtm-agent = "gtm_agent:main"
-
-[build-system]
-requires = ["uv_build>=0.13.1,<0.14.0"]
-build-backend = "uv_build"
+[tool.uv]
+package = false
 
 [dependency-groups]
 dev = [
