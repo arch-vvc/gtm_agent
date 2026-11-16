@@ -50,6 +50,16 @@ The `docker compose up -d --build` line is only needed so that Redis and the bui
 
 For each URL the script prints the result as JSON (company fields, demo, model, pitch note, pitch error, careers URL, `hiring_fde`, error), which provider and model answered, and the pitch markdown. It prints a `WARNING` line when a note was rejected and `pitch_note` is `null`. If a call raises, for example because of a bad API key, it prints an `ERROR` line and carries on with the next URL. The exit code is non zero if any URL failed. Nothing is written to Postgres and nothing is queued.
 
+To run a whole list, put one URL per line in `targets.txt` (blank lines and `#` comments are ignored) and add `--file`:
+
+```bash
+printf '# my targets\npeakflo.co\ncekura.ai\n' > targets.txt
+docker compose run --rm -v "$PWD/results:/app/results" -v "$PWD/targets.txt:/app/targets.txt" worker /app/.venv/bin/python -m scripts.real_run --file targets.txt --csv results/real_results.csv --resume
+# stopped half way? run the same command again and it carries on
+```
+
+`--resume` skips URLs that already have a row without an error in the CSV and retries the rest, so a stopped run carries on where it left off. `--delay SECONDS` (default 5) waits between companies to stay inside the free tiers, and a `12 of 70` line shows progress.
+
 ### Option B: local Python with uv
 
 This needs [uv](https://docs.astral.sh/uv/) and a throwaway Redis for the cooldowns:
