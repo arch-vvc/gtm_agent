@@ -25,7 +25,9 @@ def transport_for(handler):
     calls = []
 
     def wrapped(request):
-        calls.append(str(request.url))
+        # The request goes to a pinned IP; the Host header keeps the name the caller asked for.
+        target = request.url.raw_path.decode()
+        calls.append(f"{request.url.scheme}://{request.headers['host']}{'' if target == '/' else target}")
         return handler(request)
 
     return httpx.MockTransport(wrapped), calls
@@ -103,7 +105,7 @@ def test_ports_80_and_443_are_allowed():
 
 def test_public_host_redirecting_to_private_host_is_refused_at_the_hop():
     def handler(request):
-        if request.url.host == "example.com":
+        if request.headers["host"] == "example.com":
             return httpx.Response(302, headers={"location": "http://169.254.169.254/latest/meta-data"})
         return httpx.Response(200, text="secret")
 
@@ -220,3 +222,74 @@ def test_about_page_on_a_private_address_is_not_fetched(monkeypatch):
     assert scrape.get_careers_text("http://10.0.0.5/careers") is None
     assert scrape.get_customers_text("http://localhost/customers") is None
     assert calls == []
+
+
+class FlippingResolver:
+    """DNS rebinding: public on the first lookup, private on every later one."""
+
+    def __init__(self):
+        self.asked = []
+
+    def __call__(self, host):
+        self.asked.append(host)
+        return [PUBLIC] if len(self.asked) == 1 else ["169.254.169.254"]
+
+
+def test_rebinding_connects_to_the_checked_address_only():
+    seen = []
+
+    def handler(request):
+        seen.append((request.url.host, request.headers["host"], request.extensions.get("sni_hostname")))
+        return httpx.Response(200, text="hello")
+
+    transport, _ = transport_for(handler)
+    resolver = FlippingResolver()
+    response = scrape.fetch("https://example.com/page", resolver=resolver, transport=transport)
+    assert response.text == "hello"
+    assert seen == [(PUBLIC, "example.com", "example.com")]
+    assert resolver.asked == ["example.com"]
+
+
+def test_plain_http_is_pinned_and_keeps_the_host_header():
+    seen = []
+
+    def handler(request):
+        seen.append((request.url.host, request.headers["host"]))
+        return httpx.Response(200, text="hello")
+
+    transport, _ = transport_for(handler)
+    scrape.fetch("http://example.com", resolver=Resolver({"example.com": [PUBLIC]}), transport=transport)
+    assert seen == [(PUBLIC, "example.com")]
+
+
+def test_ipv6_address_is_pinned_in_brackets():
+    seen = []
+
+    def handler(request):
+        seen.append(request.url.host)
+        return httpx.Response(200, text="hello")
+
+    transport, _ = transport_for(handler)
+    scrape.fetch("https://v6.example.com", resolver=Resolver({"v6.example.com": ["2606:2800:220:1::1"]}), transport=transport)
+    assert seen == ["2606:2800:220:1::1"]
+
+
+def test_each_redirect_hop_is_pinned_to_its_own_checked_address():
+    seen = []
+
+    def handler(request):
+        seen.append((request.url.host, request.headers["host"]))
+        if request.headers["host"] == "example.com":
+            return httpx.Response(302, headers={"location": "https://other.example.org/x"})
+        return httpx.Response(200, text="end")
+
+    transport, _ = transport_for(handler)
+    resolver = Resolver({"example.com": [PUBLIC], "other.example.org": ["8.8.8.8"]})
+    assert scrape.fetch("https://example.com", resolver=resolver, transport=transport).text == "end"
+    assert seen == [(PUBLIC, "example.com"), ("8.8.8.8", "other.example.org")]
+
+
+def test_response_url_is_the_name_not_the_pinned_address():
+    transport, _ = transport_for(ok)
+    response = scrape.fetch("https://example.com/page", resolver=Resolver({"example.com": [PUBLIC]}), transport=transport)
+    assert str(response.url) == "https://example.com/page"

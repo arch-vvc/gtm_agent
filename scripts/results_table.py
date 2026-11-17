@@ -6,7 +6,9 @@ Usage from the repo root:
 
 By default the table goes to stdout. With --write-readme it replaces everything
 between the two results marker lines in the README. With --check it exits 0 when
-the README already holds exactly this table and 1 when it does not. Only the
+the README already holds exactly this table and 1 when it does not. With no CSV
+it prints one line and exits 0 without touching the README. A CSV that cannot be
+read or lacks a needed column exits 2. Only the
 standard library and pitch are imported, so no API keys are needed.
 """
 
@@ -168,14 +170,15 @@ def parse_args(argv):
 def main(argv=None):
     args = parse_args(argv)
     csv_path = Path(args.csv)
-    if not csv_path.is_file():  # also true for a directory
-        print(f"error: results file {csv_path} not found", file=sys.stderr)
-        return 1
+    if not csv_path.exists():
+        # Nothing to do before the first live run, so this is not an error and the README stays as it is.
+        print(f"No results yet: {csv_path} not found, README left unchanged.")
+        return 0
     try:
         block = build_block(read_rows(csv_path))
-    except (UnicodeDecodeError, OSError, ValueError) as error:
+    except (UnicodeDecodeError, OSError, ValueError, csv.Error) as error:
         print(f"error: cannot read results file {csv_path}: {error}", file=sys.stderr)
-        return 1
+        return 2
     if not (args.write_readme or args.check):
         print(block)
         return 0
