@@ -126,10 +126,49 @@ def test_empty_csv_gives_no_rows_line(tmp_path, capsys):
     assert capsys.readouterr().out.strip() == "No rows yet."
 
 
-def test_missing_csv_fails_clearly(tmp_path, capsys):
-    assert results_table.main(["--csv", str(tmp_path / "nope.csv")]) == 1
+def test_no_csv_prints_one_plain_line_and_exits_zero(tmp_path, capsys):
+    assert results_table.main(["--csv", str(tmp_path / "nope.csv")]) == 0
 
-    assert "not found" in capsys.readouterr().err
+    captured = capsys.readouterr()
+    assert len(captured.out.strip().splitlines()) == 1
+    assert "nope.csv" in captured.out and "not found" in captured.out
+    assert captured.err == ""
+
+
+@pytest.mark.parametrize("flag", ["--write-readme", "--check"])
+def test_no_csv_leaves_the_readme_alone_in_every_mode(tmp_path, capsys, flag):
+    readme = readme_with(tmp_path, "placeholder")
+    before = readme.read_bytes()
+
+    assert results_table.main(["--csv", str(tmp_path / "nope.csv"), "--readme", str(readme), flag]) == 0
+
+    assert readme.read_bytes() == before
+    assert len(capsys.readouterr().out.strip().splitlines()) == 1
+
+
+def test_write_readme_from_a_synthetic_csv_touches_only_the_block(tmp_path, capsys):
+    csv_path = write_csv(tmp_path / "real_results.csv", [make_row(name="Acme", cluster="B")])
+    readme = readme_with(tmp_path, "placeholder")
+
+    assert results_table.main(["--csv", str(csv_path), "--readme", str(readme), "--write-readme"]) == 0
+
+    text = readme.read_text(encoding="utf-8")
+    assert text.startswith("before\n") and text.endswith("after\n")
+    assert "| Acme |" in text and "placeholder" not in text
+
+
+def test_malformed_csv_exits_two_with_one_clear_line(tmp_path, capsys):
+    path = tmp_path / "bad.csv"
+    path.write_text("name,url\nx,y\n", encoding="utf-8")
+    readme = readme_with(tmp_path, "placeholder")
+    before = readme.read_bytes()
+
+    assert results_table.main(["--csv", str(path), "--readme", str(readme), "--write-readme"]) == 2
+
+    err = capsys.readouterr().err
+    assert "pitch_note" in err and len(err.strip().splitlines()) == 1
+    assert readme.read_bytes() == before
+
 
 
 def readme_with(tmp_path, body="old"):
@@ -255,14 +294,14 @@ def test_non_utf8_csv_fails_with_one_line(tmp_path, capsys):
     path = tmp_path / "latin.csv"
     path.write_bytes(b"name,pitch_note\nx,caf\xe9")
 
-    assert results_table.main(["--csv", str(path)]) == 1
+    assert results_table.main(["--csv", str(path)]) == 2
 
     err = capsys.readouterr().err
     assert "latin.csv" in err and len(err.strip().splitlines()) == 1
 
 
 def test_directory_as_csv_fails_clearly(tmp_path, capsys):
-    assert results_table.main(["--csv", str(tmp_path)]) == 1
+    assert results_table.main(["--csv", str(tmp_path)]) == 2
 
     assert str(tmp_path) in capsys.readouterr().err
 
@@ -284,7 +323,7 @@ def test_missing_columns_fail_clearly(tmp_path, capsys):
     no_id = tmp_path / "b.csv"
     no_id.write_text("pitch_note\nhello\n", encoding="utf-8")
 
-    assert results_table.main(["--csv", str(no_note)]) == 1
+    assert results_table.main(["--csv", str(no_note)]) == 2
     assert "pitch_note" in capsys.readouterr().err
-    assert results_table.main(["--csv", str(no_id)]) == 1
+    assert results_table.main(["--csv", str(no_id)]) == 2
     assert "name" in capsys.readouterr().err
