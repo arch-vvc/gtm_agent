@@ -10,7 +10,8 @@ is queued. With --csv PATH it also writes one row per URL (errors included) to a
 file. For every URL it prints the full result as JSON, then the pitch markdown
 the API would serve, and a WARNING line when the grounding guard left pitch_note empty.
 
-It needs GEMINI_API_KEY and GROQ_API_KEY in the environment. The Gemini path also
+It needs GEMINI_API_KEY and GROQ_API_KEY in the environment; with either missing it
+names it, says how to set it and exits 2. The Gemini path also
 uses Redis for its model cooldowns, so run this inside the worker container, which
 has the keys and a Redis next to it:
 
@@ -302,8 +303,34 @@ def run_one(enrich, url, rows):
     return True
 
 
+def missing_keys():
+    """Names of the model keys that are not set. enrich builds both clients on import, so both are needed."""
+    gemini = os.environ.get("GEMINI_API_KEY", "").strip() or os.environ.get("GOOGLE_API_KEY", "").strip()
+    groq = os.environ.get("GROQ_API_KEY", "").strip()
+    return [name for name, value in (("GEMINI_API_KEY", gemini), ("GROQ_API_KEY", groq)) if not value]
+
+
+def report_missing_keys(missing):
+    lines = [
+        f"Missing: {', '.join(missing)}",
+        "This script needs both GEMINI_API_KEY and GROQ_API_KEY: Gemini answers first and Groq is the fallback,",
+        "and both clients are built when it starts. Set them in your shell, then run it again:",
+        "",
+        "    export GEMINI_API_KEY=your-gemini-key",
+        "    export GROQ_API_KEY=your-groq-key",
+        "",
+        "Or run inside Docker, which reads them from .env: docker compose run --rm worker /app/.venv/bin/python -m scripts.real_run URL",
+    ]
+    print("\n".join(lines), file=sys.stderr)
+
+
 def main(argv=None):
     args = parse_args(argv)
+
+    missing = missing_keys()
+    if missing:
+        report_missing_keys(missing)
+        return 2
 
     # Imported here because importing enrich builds the Gemini and Groq clients,
     # which need API keys. --help must work without them.

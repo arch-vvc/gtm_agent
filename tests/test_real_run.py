@@ -375,3 +375,64 @@ def test_csv_help_mentions_overwrite_and_apostrophe(capsys):
     out = " ".join(capsys.readouterr().out.split())
     assert "overwritten" in out
     assert "apostrophe" in out
+
+
+def clear_keys(monkeypatch):
+    for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GROQ_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+
+
+def test_no_keys_names_both_and_exits_two_without_a_traceback(monkeypatch, capsys):
+    clear_keys(monkeypatch)
+    monkeypatch.setattr(enrich, "get_description", lambda url: pytest.fail("must not scrape"))
+
+    code = real_run.main(["ledgerly.example"])
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "GEMINI_API_KEY" in captured.err and "GROQ_API_KEY" in captured.err
+    assert "export GEMINI_API_KEY=" in captured.err
+    assert "Traceback" not in captured.err + captured.out
+
+
+@pytest.mark.parametrize(
+    ("present", "missing"),
+    [("GEMINI_API_KEY", "GROQ_API_KEY"), ("GROQ_API_KEY", "GEMINI_API_KEY")],
+)
+def test_one_key_only_names_just_the_missing_one(monkeypatch, capsys, present, missing):
+    clear_keys(monkeypatch)
+    monkeypatch.setenv(present, "some-value")
+
+    code = real_run.main(["ledgerly.example"])
+
+    err = capsys.readouterr().err
+    assert code == 2
+    assert f"Missing: {missing}" in err
+    assert f"Missing: {present}" not in err
+
+
+def test_blank_key_counts_as_missing(monkeypatch, capsys):
+    monkeypatch.setenv("GROQ_API_KEY", "   ")
+
+    assert real_run.main(["ledgerly.example"]) == 2
+    assert "Missing: GROQ_API_KEY" in capsys.readouterr().err
+
+
+def test_both_keys_run_normally(monkeypatch, capsys):
+    clear_keys(monkeypatch)
+    monkeypatch.setenv("GEMINI_API_KEY", "a")
+    monkeypatch.setenv("GROQ_API_KEY", "b")
+    fake_models(monkeypatch, [(make_company("B", AP_NOTE), "gemini-3.5-flash")])
+
+    assert real_run.main(["ledgerly.example"]) == 0
+    assert "Missing" not in capsys.readouterr().err
+
+
+def test_help_works_with_no_keys(monkeypatch, capsys):
+    clear_keys(monkeypatch)
+
+    with pytest.raises(SystemExit) as exit_info:
+        real_run.main(["--help"])
+
+    assert exit_info.value.code == 0
+    assert "--provider" in capsys.readouterr().out
