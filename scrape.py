@@ -64,7 +64,9 @@ def is_public_address(address):
 
 
 def check_public_url(url, resolver=None):
-    """Raise RefusedURL unless the URL is http(s) on port 80 or 443 and every address of its host is public."""
+    """Raise RefusedURL unless the URL is http(s) on port 80 or 443 and every address of its host is public.
+
+    Returns the addresses that passed, so the caller can connect to one of them."""
     resolver=resolver or resolve_host
     try:
         parsed=urlparse(url)
@@ -87,6 +89,7 @@ def check_public_url(url, resolver=None):
             raise httpx.ConnectError(f"Could not resolve {host}") from error
     if not addresses or not all(is_public_address(address) for address in addresses):
         raise RefusedURL()
+    return addresses
 
 
 def read_capped(response):
@@ -107,13 +110,21 @@ def fetch(url, resolver=None, transport=None):
     transport=transport or DEFAULT_TRANSPORT
     with httpx.Client(headers=headers, timeout=10, follow_redirects=False, transport=transport) as client:
         for _ in range(MAX_REDIRECTS+1):
-            check_public_url(url, resolver)
-            with client.stream("GET", url) as response:
+            address=check_public_url(url, resolver)[0]
+            # Connect to the address that passed the check, not to a second lookup of the name.
+            # The Host header and the https certificate name stay those of the original host.
+            target=httpx.URL(url)
+            pinned=target.copy_with(host=address)
+            request=client.build_request("GET", pinned, headers={"Host": target.netloc.decode()}, extensions={"sni_hostname": target.host})
+            response=client.send(request, stream=True)
+            try:
                 location=response.headers.get("location")
                 if response.status_code in REDIRECT_STATUSES and location:
-                    url=str(httpx.URL(url).join(location))
+                    url=str(target.join(location))
                     continue
-                return FetchedPage(response.status_code, response.url, read_capped(response))
+                return FetchedPage(response.status_code, target, read_capped(response))
+            finally:
+                response.close()
     raise httpx.TooManyRedirects(f"More than {MAX_REDIRECTS} redirects")
 
 
