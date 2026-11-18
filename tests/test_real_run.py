@@ -105,6 +105,7 @@ CSV_HEADER = [
     "pitch_error",
     "model",
     "error",
+    "evidence",
 ]
 
 
