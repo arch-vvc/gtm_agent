@@ -206,6 +206,7 @@ CSV_COLUMNS = [
     "pitch_error",
     "model",
     "error",
+    "evidence",
 ]
 
 
@@ -270,6 +271,7 @@ def csv_row(url, out=None, error=None):
             pitch_error=out["pitch_error"],
             model=out["model"],
             error=out["error"],
+            evidence=" | ".join(out.get("evidence") or []),
         )
         if company:
             row.update(
