@@ -661,3 +661,18 @@ def test_claims_are_fast_on_a_long_note():
     started = time.perf_counter()
     pitch.check_pitch_claims(note)
     assert time.perf_counter() - started < 2
+
+
+@pytest.mark.parametrize("code_point", pitch.DASH_CODE_POINTS)
+def test_normalise_dashes_turns_every_dash_into_a_space(code_point):
+    assert pitch.normalise_dashes("three" + chr(code_point) + "way match") == "three way match"
+
+
+def test_normalise_dashes_keeps_lines_and_collapses_double_spaces():
+    text = "a " + chr(0x2011) + " b\n\nLoom: [LOOM_URL] Repo: [REPO_URL]"
+    assert pitch.normalise_dashes(text) == "a b\n\nLoom: [LOOM_URL] Repo: [REPO_URL]"
+
+
+def test_normalise_dashes_leaves_none_and_empty_alone():
+    assert pitch.normalise_dashes(None) is None
+    assert pitch.normalise_dashes("") == ""

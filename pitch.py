@@ -116,6 +116,20 @@ LINE_IS_MARKER = re.compile(r"[ \t]*(?:[\x2d*\u2022][ \t]*)?(?:\d{1,2}|[A-Za-z])
 WORD_PATTERN = re.compile(f"[^\\W_][^\\W_'{CURLY_APOSTROPHE}]*(?:['{CURLY_APOSTROPHE}][^\\W_]+)*", re.UNICODE)
 
 
+def normalise_dashes(note):
+    """Turn every hyphen or dash character into a space, so a stray dash never costs a note.
+
+    The house style writes "three way", so a space is the right replacement. Spaces
+    left doubled by the replacement are collapsed, and line breaks are kept. A note
+    with no dash is returned unchanged. check_pitch_note still rejects a dash, as a
+    backstop for anything that reaches it without passing through here.
+    """
+    if not note or not any(char in note for char in DASH_CHARACTERS):
+        return note
+    cleaned = note.translate({code: " " for code in DASH_CODE_POINTS})
+    return re.sub(r"[ \t]{2,}", " ", cleaned)
+
+
 def check_pitch_note(note):
     """Return the style violations of a pitch note. An empty list means it passes.
 

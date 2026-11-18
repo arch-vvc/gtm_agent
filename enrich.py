@@ -323,6 +323,16 @@ Rules for pitch_note:
 DEMO_FACTS_BY_CLUSTER={"A": DEMO_FACTS_A, "B": DEMO_FACTS_B}
 
 
+def clean_note(company):
+    """Return the company with dashes in its pitch note turned into spaces. None stays None."""
+    if company is None:
+        return None
+    cleaned=pitch.normalise_dashes(company.pitch_note)
+    if cleaned == company.pitch_note:
+        return company
+    return company.model_copy(update={"pitch_note": cleaned})
+
+
 def guard_violations(company, site):
     """Run the pitch guard on the note, with the facts of the demo the chosen cluster describes.
 
@@ -360,6 +370,7 @@ def enrich(url):
 
     print("Asking LLM")
     company, model=ask(prompt)
+    company=clean_note(company)
     if company is None:
         return result(name, error="All models are currently busy, please retry in a minute.", site=site)
 
@@ -376,6 +387,7 @@ def enrich(url):
             "Write every field again and fix this."
         )
         retry_company, retry_model=ask(retry_prompt)
+        retry_company=clean_note(retry_company)
         if retry_company is None:
             retry_problem="the retry returned nothing"
         elif junk_fields(retry_company):
