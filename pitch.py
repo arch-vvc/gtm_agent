@@ -169,6 +169,10 @@ def build_corpus(site):
     customers = site.get("customers")
     if isinstance(customers, str):
         parts.append(customers)
+    for key in ("job_title", "job_post"):
+        job_text = site.get(key)
+        if isinstance(job_text, str):
+            parts.append(job_text)
     demo_facts = site.get("demo_facts")
     if isinstance(demo_facts, str):
         parts.append(demo_facts)

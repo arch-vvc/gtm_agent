@@ -72,6 +72,7 @@ docker compose run --rm -v "$PWD/results:/app/results" -v "$PWD/targets.txt:/app
 
 Then commit `results/real_results.csv` and run `uv run python -m scripts.results_table --write-readme` to fill the Results table.
 
+- A line may carry a job post link after the company, for example `ciroos.ai https://jobs.ashbyhq.com/ciroos/<id>`. Greenhouse, Lever and Ashby links are read through their public posting APIs, and the first 3000 characters of the job text are added to what the model sees and to what the grounding guard counts as on the site. Any other link, or a posting that is no longer listed, is ignored and the run carries on with the company site alone.
 - `--resume` skips URLs that already have a row without an error in the CSV and retries the rest, so a stopped run carries on where it left off.
 - `--delay SECONDS` (default 5) waits between companies to stay inside the free tiers. A `12 of 70` line shows progress.
 - URLs can also be given as arguments, and `--provider gemini|groq|all` tests one provider at a time.

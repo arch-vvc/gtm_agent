@@ -1,7 +1,9 @@
+import html
 import ipaddress
+import json
 import re
 import socket
-from urllib.parse import urljoin, urlparse
+from urllib.parse import quote, unquote, urljoin, urlparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -309,6 +311,86 @@ def get_customers_text(customers_url):
     return text[:2000] or None
 
 
+MAX_JOB_TEXT=3000
+GREENHOUSE_HOSTS={"job-boards.greenhouse.io", "boards.greenhouse.io"}
+# The public posting APIs of each job board. {board} and {id} are percent encoded before use.
+JOB_APIS={
+    "greenhouse": "https://boards-api.greenhouse.io/v1/boards/{board}/jobs/{id}",
+    "lever": "https://api.lever.co/v0/postings/{board}/{id}",
+    "ashby": "https://api.ashbyhq.com/posting-api/job-board/{board}",
+}
+
+
+def parse_job_url(url):
+    """Return (job board, board name, job id) for a Greenhouse, Lever or Ashby posting link, else None."""
+    if not isinstance(url, str) or not url.strip():
+        return None
+    parsed=urlparse(url.strip())
+    host=(parsed.hostname or "").lower()
+    parts=[unquote(part) for part in parsed.path.split("/") if part]
+    if host in GREENHOUSE_HOSTS and len(parts) >= 3 and parts[1] == "jobs":
+        return ("greenhouse", parts[0], parts[2])
+    if host == "jobs.lever.co" and len(parts) >= 2:
+        return ("lever", parts[0], parts[1])
+    if host == "jobs.ashbyhq.com" and len(parts) >= 2:
+        return ("ashby", parts[0], parts[1])
+    return None
+
+
+def tidy(text):
+    return " ".join(text.split()) if isinstance(text, str) else ""
+
+
+def get_job_post(job_url):
+    """Read a job posting from its board's public API. Returns {"title", "text"} or None.
+
+    Only Greenhouse, Lever and Ashby links are read. Anything else, a posting that is no
+    longer listed, a failed request or an unreadable answer gives None, so the caller
+    carries on with the company site alone. The request goes through fetch(), so private
+    addresses are refused and the body is capped.
+    """
+    parsed=parse_job_url(job_url)
+    if parsed is None:
+        return None
+    board, board_name, job_id=parsed
+    api=JOB_APIS[board].format(board=quote(board_name, safe=""), id=quote(job_id, safe=""))
+    try:
+        response=fetch(api)
+    except (httpx.HTTPError, RefusedURL):
+        return None
+    if response.is_error:
+        return None
+    try:
+        data=json.loads(response.text)
+    except ValueError:
+        return None
+    if not isinstance(data, dict):
+        return None
+
+    if board == "greenhouse":
+        # Greenhouse sends the description as HTML that has been entity escaped once.
+        content=data.get("content")
+        text=BeautifulSoup(html.unescape(content), "html.parser").get_text(" ", strip=True) if isinstance(content, str) else ""
+        title=data.get("title")
+    elif board == "lever":
+        text=data.get("descriptionPlain")
+        title=data.get("text")
+    else:
+        jobs=data.get("jobs")
+        if not isinstance(jobs, list):
+            return None
+        posting=next((job for job in jobs if isinstance(job, dict) and job.get("id") == job_id), None)
+        if posting is None:
+            return None
+        text=posting.get("descriptionPlain")
+        title=posting.get("title")
+
+    text=tidy(text)[:MAX_JOB_TEXT]
+    if not text:
+        return None
+    return {"title": tidy(title) or None, "text": text}
+
+
 def failed_description(url, name, domain, error):
     return {
         "url": url,
@@ -322,12 +404,14 @@ def failed_description(url, name, domain, error):
         "fde_roles": [],
         "customers_url": None,
         "customers": None,
+        "job_title": None,
+        "job_post": None,
         "domain": domain,
         "error": error,
     }
 
 
-def get_description(url):
+def get_description(url, job_url=None):
     raw_url=url
     url=normalise_url(url)
     if url is None:
@@ -370,6 +454,7 @@ def get_description(url):
 
     customers_url=find_customers_url(soup, str(response.url))
     customers=get_customers_text(customers_url)
+    job=get_job_post(job_url) if job_url else None
 
     return {
         "url": url,
@@ -383,6 +468,8 @@ def get_description(url):
         "fde_roles": fde_roles,
         "customers_url": customers_url,
         "customers": customers,
+        "job_title": job["title"] if job else None,
+        "job_post": job["text"] if job else None,
         "domain": host_of(str(response.url)) or input_domain,
         "error": None,
     }

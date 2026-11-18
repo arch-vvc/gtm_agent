@@ -274,6 +274,10 @@ def build_prompt(site):
         text=clean_site_text(site.get(key))
         if text:
             site_lines.append(f"{label}: {text}")
+    job_post=clean_site_text(site.get("job_post"))
+    if job_post:
+        job_title=clean_site_text(site.get("job_title")) or "role"
+        site_lines.append(f"Job post ({job_title}): {job_post}")
     site_block="\n".join(site_lines)
     buyer_rule=(
         "For target_customer, name the type of buyer, meaning who pays for it, "
@@ -354,9 +358,9 @@ def junk_error(company, missing):
     )
 
 
-def enrich(url):
+def enrich(url, job_url=None):
     print(f"Scraping {url}")
-    site=get_description(url)
+    site=get_description(url, job_url=job_url) if job_url else get_description(url)
     print("Scrape done")
     name=site["name"]
 
