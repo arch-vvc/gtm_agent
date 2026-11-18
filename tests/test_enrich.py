@@ -53,6 +53,7 @@ def test_enrich_returns_company_from_mocked_scraper_and_llm(monkeypatch):
         "careers_url": None,
         "hiring_fde": None,
         "domain": None,
+        "evidence": [],
     }
     assert "Online payment processing" in prompts[0]
     assert "Millions of companies" in prompts[0]
