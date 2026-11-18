@@ -76,7 +76,7 @@ ALLOWED_WORDS = frozenset(
         # days
         "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
         # vocabulary from the user's own pitch
-        "fde", "ai", "api", "llm", "qa", "sop", "ap", "gst", "csv", "erp",
+        "fde", "ai", "api", "apis", "llm", "llms", "url", "urls", "qa", "sop", "ap", "gst", "csv", "erp",
         "loom", "repo", "github", "india", "indian", "english",
         # abbreviation tokens, so "Dr. Smith" with Smith on the site passes
         "dr", "mr", "mrs", "ms", "st", "inc", "ltd",

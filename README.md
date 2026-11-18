@@ -80,6 +80,16 @@ Then commit `results/real_results.csv` and run `uv run python -m scripts.results
 - Nothing is written to Postgres and nothing is queued. `--help` works without any keys set.
 - Without Docker for the app: `uv sync`, start a throwaway Redis (`docker run -d --name gtm-redis -p 6379:6379 redis:7`), load `.env`, then run `REDIS_HOST=localhost uv run python -m scripts.real_run --file targets.txt --csv results/real_results.csv --resume`. Remove it with `docker rm -f gtm-redis`.
 
+### Checking the cluster answers
+
+`evals/golden.csv` holds 38 companies with the cluster label from the author's tracker, set before the engine existed. After a run over those companies, score the CSV (no model call, no keys):
+
+```bash
+uv run python -m scripts.golden_eval --csv results/real_results.csv
+```
+
+It prints cluster accuracy, how often the engine picks the same demo as the label (A, B or none, the choice that decides what gets sent), the wrong clusters with the engine's reason, the failures and the companies not run. It exits 1 below the 90 percent target. The labels are one person's judgement and the clusters overlap, so this measures agreement with the tracker, not truth.
+
 ### The service in 5 minutes
 
 ```bash

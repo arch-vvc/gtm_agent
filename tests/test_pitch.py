@@ -676,3 +676,16 @@ def test_normalise_dashes_keeps_lines_and_collapses_double_spaces():
 def test_normalise_dashes_leaves_none_and_empty_alone():
     assert pitch.normalise_dashes(None) is None
     assert pitch.normalise_dashes("") == ""
+
+
+@pytest.mark.parametrize("word", ["URL", "URLs", "LLM", "LLMs", "APIs"])
+def test_common_plural_acronyms_are_not_taken_for_invented_names(word):
+    note = f"Ledgerly could map {word} to landing pages.\n\nLoom: [LOOM_URL] Repo: [REPO_URL]"
+
+    assert pitch.ungrounded_names(note, "Ledgerly automates accounts payable") == []
+
+
+def test_an_invented_name_ending_in_s_is_still_caught():
+    note = "Ledgerly could try FlowDesks for this.\n\nLoom: [LOOM_URL] Repo: [REPO_URL]"
+
+    assert pitch.ungrounded_names(note, "Ledgerly automates accounts payable") == ["FlowDesks"]
