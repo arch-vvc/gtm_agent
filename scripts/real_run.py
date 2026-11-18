@@ -87,9 +87,12 @@ def parse_args(argv):
     if args.delay < 0:
         parser.error("--delay cannot be negative")
     file_urls = []
+    args.job_urls = {}
     if args.file:
         try:
-            file_urls = read_url_file(args.file)
+            targets = read_targets(args.file)
+            file_urls = dedupe_urls(list(targets))
+            args.job_urls = {url_key(url): job for url, job in targets.items() if job}
         except OSError as exc:
             parser.error(f"cannot read --file {args.file}: {exc.strerror or exc}")
         if not file_urls:
@@ -116,11 +119,26 @@ def dedupe_urls(urls):
     return kept
 
 
-def read_url_file(path):
-    """URLs from a text file: one per line, blanks and # comments ignored, duplicates dropped."""
+def read_targets(path):
+    """Targets from a text file as {company url: job post url or None}.
+
+    One per line: the company, then optionally a job post link after whitespace. Blank lines
+    and # comments are ignored, and a repeated company keeps its first line.
+    """
     with open(path, encoding="utf-8") as handle:
         lines = [line.strip() for line in handle]
-    return dedupe_urls([line for line in lines if line and not line.startswith("#")])
+    targets = {}
+    for line in lines:
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        targets.setdefault(parts[0], parts[1] if len(parts) > 1 else None)
+    return targets
+
+
+def read_url_file(path):
+    """URLs from a text file: one per line, blanks and # comments ignored, duplicates dropped."""
+    return dedupe_urls(list(read_targets(path)))
 
 
 def read_finished_rows(path):
@@ -274,11 +292,11 @@ def write_csv(path, rows, announce=True):
         print(f"\nCSV written to {path} ({len(rows)} rows)")
 
 
-def run_one(enrich, url, rows):
+def run_one(enrich, url, rows, job_url=None):
     """Enrich one URL, print everything and add its CSV row to rows. Returns True when it worked."""
     print(f"\n===== {url} =====")
     try:
-        out = enrich.enrich(url)
+        out = enrich.enrich(url, job_url=job_url) if job_url else enrich.enrich(url)
     except Exception as exc:  # noqa: BLE001
         # Blind except on purpose: one bad URL must not stop the run.
         # The message is redacted first: SDK errors can echo keys or headers.
@@ -351,7 +369,7 @@ def main(argv=None):
         if number > 1 and args.delay > 0:
             time.sleep(args.delay)
         print(f"\n{number} of {len(todo)}")
-        results.append(run_one(enrich, url, rows))
+        results.append(run_one(enrich, url, rows, args.job_urls.get(url_key(url))))
         if args.csv:
             # Written after every company so a stopped run keeps its progress for --resume.
             write_csv(args.csv, rows, announce=False)

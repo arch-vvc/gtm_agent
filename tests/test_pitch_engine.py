@@ -284,13 +284,39 @@ def test_guard_accepts_grounded_note_without_retry(monkeypatch):
 
 def test_guard_retries_once_for_a_style_violation(monkeypatch):
     use_site(monkeypatch, AP_SITE)
-    dashed = AP_NOTE.replace("three way", "three" + chr(0x2D) + "way")
-    prompts = script_ask(monkeypatch, [(make_company("B", dashed), "m1"), (make_company("B", AP_NOTE), "m2")])
+    no_placeholders = AP_NOTE.replace("Loom: [LOOM_URL] Repo: [REPO_URL]", "Loom and repo to follow.")
+    prompts = script_ask(
+        monkeypatch, [(make_company("B", no_placeholders), "m1"), (make_company("B", AP_NOTE), "m2")]
+    )
 
     out = enrich.enrich("ledgerly.example")
 
     assert len(prompts) == 2
-    assert "hyphen or dash" in prompts[1]
+    assert "last line must contain" in prompts[1]
+    assert out["pitch_note"] == AP_NOTE
+
+
+@pytest.mark.parametrize("code_point", pitch.DASH_CODE_POINTS)
+def test_a_dash_in_the_note_is_turned_into_a_space_not_a_rejection(monkeypatch, code_point):
+    use_site(monkeypatch, AP_SITE)
+    dashed = AP_NOTE.replace("three way", "three" + chr(code_point) + "way")
+    prompts = script_ask(monkeypatch, [(make_company("B", dashed), "m1")])
+
+    out = enrich.enrich("ledgerly.example")
+
+    assert len(prompts) == 1
+    assert out["pitch_note"] == AP_NOTE
+    assert out["pitch_error"] is None
+
+
+def test_a_dash_in_the_retry_answer_is_also_cleaned(monkeypatch):
+    use_site(monkeypatch, AP_SITE)
+    dashed = AP_NOTE.replace("three way", "three" + chr(0x2011) + "way")
+    prompts = script_ask(monkeypatch, [(make_company("B", INVENTED_NOTE), "m1"), (make_company("B", dashed), "m2")])
+
+    out = enrich.enrich("ledgerly.example")
+
+    assert len(prompts) == 2
     assert out["pitch_note"] == AP_NOTE
 
 

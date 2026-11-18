@@ -274,6 +274,10 @@ def build_prompt(site):
         text=clean_site_text(site.get(key))
         if text:
             site_lines.append(f"{label}: {text}")
+    job_post=clean_site_text(site.get("job_post"))
+    if job_post:
+        job_title=clean_site_text(site.get("job_title")) or "role"
+        site_lines.append(f"Job post ({job_title}): {job_post}")
     site_block="\n".join(site_lines)
     buyer_rule=(
         "For target_customer, name the type of buyer, meaning who pays for it, "
@@ -323,6 +327,16 @@ Rules for pitch_note:
 DEMO_FACTS_BY_CLUSTER={"A": DEMO_FACTS_A, "B": DEMO_FACTS_B}
 
 
+def clean_note(company):
+    """Return the company with dashes in its pitch note turned into spaces. None stays None."""
+    if company is None:
+        return None
+    cleaned=pitch.normalise_dashes(company.pitch_note)
+    if cleaned == company.pitch_note:
+        return company
+    return company.model_copy(update={"pitch_note": cleaned})
+
+
 def guard_violations(company, site):
     """Run the pitch guard on the note, with the facts of the demo the chosen cluster describes.
 
@@ -344,9 +358,9 @@ def junk_error(company, missing):
     )
 
 
-def enrich(url):
+def enrich(url, job_url=None):
     print(f"Scraping {url}")
-    site=get_description(url)
+    site=get_description(url, job_url=job_url) if job_url else get_description(url)
     print("Scrape done")
     name=site["name"]
 
@@ -360,6 +374,7 @@ def enrich(url):
 
     print("Asking LLM")
     company, model=ask(prompt)
+    company=clean_note(company)
     if company is None:
         return result(name, error="All models are currently busy, please retry in a minute.", site=site)
 
@@ -376,6 +391,7 @@ def enrich(url):
             "Write every field again and fix this."
         )
         retry_company, retry_model=ask(retry_prompt)
+        retry_company=clean_note(retry_company)
         if retry_company is None:
             retry_problem="the retry returned nothing"
         elif junk_fields(retry_company):
