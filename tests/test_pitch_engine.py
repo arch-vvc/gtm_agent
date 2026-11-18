@@ -685,7 +685,7 @@ def test_prompt_leaves_out_empty_sections_and_has_no_not_available():
 def test_result_carries_the_union_of_keys_on_every_path(monkeypatch):
     expected = {
         "name", "company", "model", "error", "demo", "pitch_note",
-        "pitch_error", "careers_url", "hiring_fde", "domain",
+        "pitch_error", "careers_url", "hiring_fde", "domain", "evidence",
     }  # fmt: skip
     site = {**AP_SITE, "domain": "ledgerly.example"}
 

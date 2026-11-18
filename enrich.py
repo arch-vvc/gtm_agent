@@ -38,6 +38,7 @@ class Company(BaseModel):
     cluster_reason: str
     customer_pain: str
     tailoring: list[str] = Field(min_length=3, max_length=3)
+    evidence: list[str] = Field(default_factory=list)
     pitch_note: str
 
 
@@ -234,6 +235,7 @@ def result(name, company=None, model=None, error=None, demo=None, pitch_note=Non
         "careers_url": site.get("careers_url"),
         "hiring_fde": site.get("hiring_fde"),
         "domain": site.get("domain"),
+        "evidence": getattr(company, "evidence", None),
     }
 
 
@@ -249,6 +251,9 @@ def hiring_signal(site):
 
 SITE_TEXT_TAG=re.compile(r"<\s*/?\s*site_text\s*>", re.IGNORECASE)
 MAX_SITE_FIELD_CHARS=2000
+# The note must come with quotes from the site that back what it says about the company. Tests that
+# build notes without quotes turn this off in tests/conftest.py.
+REQUIRE_EVIDENCE=True
 
 
 def clean_site_text(value):
@@ -306,6 +311,7 @@ cluster_reason: one sentence that quotes the site's own words.
 customer_pain: one sentence, grounded in the text, about the deployment pain the company's customers have.
 tailoring: exactly 3 changes to make to a demo for this company, covering sample data, persona names and terminology.
 
+evidence: 1 to 4 quotes copied exactly from the site text above (the title, description, about page, customers page or job post), each at least 3 words, one for each thing the note says about the company. Copy the words, never paraphrase, and never quote the demos below. A sentence in the note that says the company or its customers get a result (cuts, reduces, saves, improves, faster, fewer) must rest on one of these quotes, otherwise leave it out.
 pitch_note: a short note to the company's founder or FDE lead. It is written by an engineer who has built exactly two demos, A and B, listed below, and wants a conversation about a forward deployed engineer or solutions engineering role. The two demos:
 {BUILT_DEMOS}
 Rules for pitch_note:
@@ -344,7 +350,10 @@ def guard_violations(company, site):
     A copy of the site dict is used so the original is never changed.
     """
     guard_site={**site, "demo_facts": DEMO_FACTS_BY_CLUSTER.get(company.cluster)}
-    violations=pitch.pitch_violations(company.pitch_note, guard_site)
+    if REQUIRE_EVIDENCE:
+        violations=pitch.pitch_violations(company.pitch_note, guard_site, evidence=company.evidence)
+    else:
+        violations=pitch.pitch_violations(company.pitch_note, guard_site)
     if company.cluster not in DEMO_FACTS_BY_CLUSTER and pitch.claims_built_demo(company.pitch_note):
         violations.append("claims a built demo for a cluster with no demo built")
     return violations

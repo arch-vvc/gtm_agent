@@ -364,12 +364,89 @@ def claims_built_demo(note):
     return bool(BUILT_PATTERN.search(note or ""))
 
 
-def pitch_violations(note, site):
-    """Return style violations, claim violations plus one line for the ungrounded names, if any."""
+MIN_QUOTE_WORDS = 3
+
+# A sentence that says someone gets a result. It must be backed by a quote.
+OUTCOME_WORDS = re.compile(
+    r"\b(?:cut|cuts|cutting|reduce|reduces|reduced|reducing|save|saves|saved|saving|boost|boosts|boosted|"
+    r"increase|increases|increased|improve|improves|improved|improving|halve|halves|halved|double|doubles|"
+    r"doubled|triple|triples|tripled|faster|fewer|eliminate|eliminates|eliminated)\b",
+    re.IGNORECASE,
+)
+# A sentence by the author about the demo ("I would reduce ...", "First, we would improve ...") is not a claim about the company.
+AUTHOR_SENTENCE = re.compile(r"^\W*(?:(?:first|second|third|finally|lastly)\W+)?(?:i|we)\b", re.IGNORECASE)
+SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+MIN_SHARED_WORDS = 3
+LINK_WORDS = frozenset(
+    {"the", "and", "for", "with", "that", "this", "from", "they", "their", "your", "our", "are", "its", "has",
+     "have", "can", "will", "site", "says", "said", "you", "was", "were", "been", "also", "into", "than", "then"}
+)  # fmt: skip
+
+
+def normalise_quote(text):
+    """Lower case the text and reduce every run of punctuation, dashes and spaces to one space."""
+    return re.sub(r"[\W_]+", " ", (text or "").lower()).strip()
+
+
+def site_quote_text(site):
+    """The words of the company's own pages and job post. The name, the host and the demo facts are not included."""
+    keys = ("title", "description", "about", "customers", "job_title", "job_post")
+    return " ".join(site[key] for key in keys if isinstance(site.get(key), str))
+
+
+def check_evidence(evidence, site):
+    """Return one violation per evidence quote that is too short or is not in the site text.
+
+    A quote counts when its normalised words appear as a run in the normalised site text, so
+    case, punctuation, dashes and spacing do not matter. No quotes at all is one violation.
+    """
+    quotes = [quote for quote in (evidence or []) if isinstance(quote, str) and quote.strip()]
+    if not quotes:
+        return ["evidence has no quotes: copy 1 to 4 phrases of at least 3 words from the site text"]
+    text = f" {normalise_quote(site_quote_text(site))} "
+    violations = []
+    for quote in quotes:
+        words = normalise_quote(quote)
+        if len(words.split()) < MIN_QUOTE_WORDS:
+            violations.append(f"evidence quote too short to prove anything: '{quote}'")
+        elif f" {words} " not in text:
+            violations.append(f"evidence quote not found on the site: '{quote[:100]}'")
+    return violations
+
+
+def content_words(text):
+    return {word for word in normalise_quote(text).split() if len(word) > 2 and word not in LINK_WORDS}
+
+
+def check_outcome_claims(note, evidence):
+    """Return one violation per sentence that claims a result for the company and shares fewer than
+    3 content words with every evidence quote. Sentences by the author and the Loom line are skipped."""
+    quote_words = [content_words(quote) for quote in (evidence or []) if isinstance(quote, str)]
+    violations = []
+    for line in (note or "").splitlines():
+        if LOOM in line:
+            continue
+        for sentence in SENTENCE_SPLIT.split(line.strip()):
+            if not sentence or AUTHOR_SENTENCE.match(sentence) or not OUTCOME_WORDS.search(sentence):
+                continue
+            shared = max((len(content_words(sentence) & words) for words in quote_words), default=0)
+            if shared < MIN_SHARED_WORDS:
+                violations.append(f"claim has no quote: '{sentence[:120]}' (quote it from the site or leave it out)")
+    return violations
+
+
+def pitch_violations(note, site, evidence=None):
+    """Return style violations, claim violations plus one line for the ungrounded names, if any.
+
+    When evidence (a list of quotes, possibly empty) is given, the quotes must be real and every
+    sentence that claims a result for the company must be backed by one. None skips those checks.
+    """
     violations = check_pitch_note(note) + check_pitch_claims(note)
     missing = ungrounded_names(note, build_corpus(site))
     if missing:
         violations.append("names not found on the site: " + ", ".join(missing))
+    if evidence is not None:
+        violations += check_evidence(evidence, site) + check_outcome_claims(note, evidence)
     return violations
 
 
