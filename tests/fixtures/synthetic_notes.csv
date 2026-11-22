@@ -1,0 +1,38 @@
+# SYNTHETIC. Every company and note below is invented for tests. No scraped text. The text ‑ is decoded to that character by the test.
+id,cluster,expect,note
+good_plain,A,pass,"I built a voice agent call QA demo for Echobench, so your clients can see failing turns before go live.
+
+First, the site says Echobench tests voice AI agents with simulated callers.
+Second, I would adapt the personas to your clients.
+
+Loom: [LOOM_URL] Repo: [REPO_URL]"
+good_u2011_dash,A,pass,"I built a voice agent call QA demo for Echobench, a three‑way check of scripts for your clients.
+
+First, the site says Echobench tests voice AI agents with simulated callers.
+Second, I would adapt the personas to your clients.
+
+Loom: [LOOM_URL] Repo: [REPO_URL]"
+good_acronyms,A,pass,"I built a voice agent call QA demo for Echobench, so your CFO can see which scripts fail before go live.
+
+First, the site says Echobench tests voice AI agents with simulated callers, where NAV and ACID style checks matter to buyers.
+Second, I would adapt the personas to your clients.
+
+Loom: [LOOM_URL] Repo: [REPO_URL]"
+good_titles,A,pass,"I built a voice agent call QA demo for Echobench, so a Chief Officer or an Ops Manager can see failing turns.
+
+First, the site says Echobench tests voice AI agents with simulated callers.
+Second, I would adapt the personas to your clients.
+
+Loom: [LOOM_URL] Repo: [REPO_URL]"
+bad_latency,A,fail,"I built a voice agent call QA demo for Echobench that proves sub 100ms latency for your clients.
+
+First, the site says Echobench tests voice AI agents with simulated callers.
+Second, I would adapt the personas to your clients.
+
+Loom: [LOOM_URL] Repo: [REPO_URL]"
+bad_invented_company,A,fail,"I built a voice agent call QA demo for Echobench, in the same space as Zorvex Labs.
+
+First, the site says Echobench tests voice AI agents with simulated callers.
+Second, I would adapt the personas to your clients.
+
+Loom: [LOOM_URL] Repo: [REPO_URL]"

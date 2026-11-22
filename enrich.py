@@ -10,6 +10,7 @@ from google.genai import errors, types
 from groq import Groq
 from pydantic import BaseModel, Field, ValidationError
 
+import facts
 import pitch
 from junk import describe_answer, is_junk, junk_fields  # noqa: F401 (is_junk is re exported)
 from scrape import get_description
@@ -208,18 +209,13 @@ def ask(prompt):
     return first_junk
 
 
-# Fixed fact sheets for the built demos. The pitch note may describe a demo only with these facts. Edit them here.
-DEMO_FACTS_A=(
-    "A: voice agent call QA takes a client's call script (SOP), runs about 20 simulated callers against a voice agent, "
-    "including Hinglish and adversarial callers, has a judge score every call against the script, and shows the exact "
-    "failing turns on a dashboard so one prompt fix can be tested and the pass rate compared."
-)
-DEMO_FACTS_B=(
-    "B: invoice exception triage takes three messy exports (invoices, purchase orders and payments) such as from Tally "
-    "or Zoho, flags every three way match mismatch (wrong amounts, duplicates, missing purchase orders and GST errors), "
-    "shows the rupees at risk, and lets you click a row to see the raw rows and a one sentence explanation."
-)
+# The fact sheets of the built demos live in facts/*.md. The pitch note may describe a demo only with these facts.
+SHEET_A=facts.load("call-qa")
+SHEET_B=facts.load("invoice-exception-triage")
+DEMO_FACTS_A=facts.prompt_text(SHEET_A, "A")
+DEMO_FACTS_B=facts.prompt_text(SHEET_B, "B")
 BUILT_DEMOS=DEMO_FACTS_A+"\n"+DEMO_FACTS_B
+NOT_MEASURED_LINE=facts.not_measured_line(SHEET_A, SHEET_B)
 
 
 def result(name, company=None, model=None, error=None, demo=None, pitch_note=None, pitch_error=None, site=None):
@@ -312,6 +308,7 @@ customer_pain: one sentence, grounded in the text, about the deployment pain the
 tailoring: exactly 3 changes to make to a demo for this company, covering sample data, persona names and terminology.
 
 evidence: 1 to 4 quotes copied exactly from the site text above (the title, description, about page, customers page or job post), each at least 3 words, one for each thing the note says about the company. Copy the words, never paraphrase, and never quote the demos below. A sentence in the note that says the company or its customers get a result (cuts, reduces, saves, improves, faster, fewer) must rest on one of these quotes, otherwise leave it out.
+{NOT_MEASURED_LINE}
 pitch_note: a short note to the company's founder or FDE lead. It is written by an engineer who has built exactly two demos, A and B, listed below, and wants a conversation about a forward deployed engineer or solutions engineering role. The two demos:
 {BUILT_DEMOS}
 Rules for pitch_note:
@@ -331,6 +328,7 @@ Rules for pitch_note:
 
 # The fact sheet of each built demo, keyed by cluster. Other clusters have no built demo, so they get no facts.
 DEMO_FACTS_BY_CLUSTER={"A": DEMO_FACTS_A, "B": DEMO_FACTS_B}
+SHEET_BY_CLUSTER={"A": SHEET_A, "B": SHEET_B}
 
 
 def clean_note(company):
@@ -354,6 +352,9 @@ def guard_violations(company, site):
         violations=pitch.pitch_violations(company.pitch_note, guard_site, evidence=company.evidence)
     else:
         violations=pitch.pitch_violations(company.pitch_note, guard_site)
+    sheet=SHEET_BY_CLUSTER.get(company.cluster)
+    if sheet:
+        violations+=pitch.check_demo_claims(company.pitch_note, sheet)
     if company.cluster not in DEMO_FACTS_BY_CLUSTER and pitch.claims_built_demo(company.pitch_note):
         violations.append("claims a built demo for a cluster with no demo built")
     return violations
