@@ -1,39 +1,39 @@
-url,company,expected_cluster,label_source
-peakflo.co,Peakflo,B,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-cozmo.ai,Cozmo AI,C,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-telnyx.com,Telnyx,A,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-prodigal.com,Prodigal,B,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-turing.com,Turing,E,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-ciroos.ai,Ciroos,C,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-neuralconcept.com,Neural Concept,D,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-certa.ai,Certa,B,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-blitzy.com,Blitzy,E,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-hackerrank.com,HackerRank,F,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-arcesium.com,Arcesium,B,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-fibr.ai,Fibr AI,F,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-revrag.ai,RevRag.AI,A,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-shortloop.ai,ShortLoop,A,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-joinhandshake.com,Handshake AI,E,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-bluemachines.ai,Blue Machines AI,A,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-emergent.sh,Emergent Labs,C,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-devrev.ai,DevRev,C,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-cartesia.ai,Cartesia,A,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-avaamo.com,Avaamo,A,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-wonderful.ai,Wonderful,A,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-notion.com,Notion,E,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-databricks.com,Databricks,E,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-happyrobot.ai,HappyRobot,D,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-furtherai.com,FurtherAI,B,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-salespatriot.com,SalesPatriot,F,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-palantir.com,Palantir,C,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-collectwise.com,CollectWise,B,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-regal.ai,Regal,A,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-livekit.io,LiveKit,A,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-loadsmart.com,Loadsmart,D,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-alguna.com,Alguna,B,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-nango.dev,Nango,E,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-pinelabs.com,Pine Labs,B,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-gushwork.ai,Gushwork,C,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-mactores.com,Mactores,C,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-kusho.ai,KushoAI,E,"FDE_Startup_Tracker Cluster column, set before the engine existed"
-trylunar.ai,Lunar,C,"FDE_Startup_Tracker Cluster column, set before the engine existed"
+url,company,expected_cluster,label_source,split
+peakflo.co,Peakflo,B,"FDE_Startup_Tracker Cluster column, set before the engine existed",held_out
+cozmo.ai,Cozmo AI,C,"FDE_Startup_Tracker Cluster column, set before the engine existed",dev
+telnyx.com,Telnyx,A,"FDE_Startup_Tracker Cluster column, set before the engine existed",dev
+prodigal.com,Prodigal,B,"FDE_Startup_Tracker Cluster column, set before the engine existed",held_out
+turing.com,Turing,E,"FDE_Startup_Tracker Cluster column, set before the engine existed",dev
+ciroos.ai,Ciroos,C,"FDE_Startup_Tracker Cluster column, set before the engine existed",dev
+neuralconcept.com,Neural Concept,D,"FDE_Startup_Tracker Cluster column, set before the engine existed",dev
+certa.ai,Certa,B,"FDE_Startup_Tracker Cluster column, set before the engine existed",held_out
+blitzy.com,Blitzy,E,"FDE_Startup_Tracker Cluster column, set before the engine existed",dev
+hackerrank.com,HackerRank,F,"FDE_Startup_Tracker Cluster column, set before the engine existed",dev
+arcesium.com,Arcesium,B,"FDE_Startup_Tracker Cluster column, set before the engine existed",dev
+fibr.ai,Fibr AI,F,"FDE_Startup_Tracker Cluster column, set before the engine existed",dev
+revrag.ai,RevRag.AI,A,"FDE_Startup_Tracker Cluster column, set before the engine existed",dev
+shortloop.ai,ShortLoop,A,"FDE_Startup_Tracker Cluster column, set before the engine existed",dev
+joinhandshake.com,Handshake AI,E,"FDE_Startup_Tracker Cluster column, set before the engine existed",dev
+bluemachines.ai,Blue Machines AI,A,"FDE_Startup_Tracker Cluster column, set before the engine existed",dev
+emergent.sh,Emergent Labs,C,"FDE_Startup_Tracker Cluster column, set before the engine existed",dev
+devrev.ai,DevRev,C,"FDE_Startup_Tracker Cluster column, set before the engine existed",dev
+cartesia.ai,Cartesia,A,"FDE_Startup_Tracker Cluster column, set before the engine existed",dev
+avaamo.com,Avaamo,A,"FDE_Startup_Tracker Cluster column, set before the engine existed",dev
+wonderful.ai,Wonderful,A,"FDE_Startup_Tracker Cluster column, set before the engine existed",dev
+notion.com,Notion,E,"FDE_Startup_Tracker Cluster column, set before the engine existed",dev
+databricks.com,Databricks,E,"FDE_Startup_Tracker Cluster column, set before the engine existed",dev
+happyrobot.ai,HappyRobot,D,"FDE_Startup_Tracker Cluster column, set before the engine existed",dev
+furtherai.com,FurtherAI,B,"FDE_Startup_Tracker Cluster column, set before the engine existed",dev
+salespatriot.com,SalesPatriot,F,"FDE_Startup_Tracker Cluster column, set before the engine existed",dev
+palantir.com,Palantir,C,"FDE_Startup_Tracker Cluster column, set before the engine existed",dev
+collectwise.com,CollectWise,B,"FDE_Startup_Tracker Cluster column, set before the engine existed",dev
+regal.ai,Regal,A,"FDE_Startup_Tracker Cluster column, set before the engine existed",dev
+livekit.io,LiveKit,A,"FDE_Startup_Tracker Cluster column, set before the engine existed",dev
+loadsmart.com,Loadsmart,D,"FDE_Startup_Tracker Cluster column, set before the engine existed",dev
+alguna.com,Alguna,B,"FDE_Startup_Tracker Cluster column, set before the engine existed",held_out
+nango.dev,Nango,E,"FDE_Startup_Tracker Cluster column, set before the engine existed",held_out
+pinelabs.com,Pine Labs,B,"FDE_Startup_Tracker Cluster column, set before the engine existed",held_out
+gushwork.ai,Gushwork,C,"FDE_Startup_Tracker Cluster column, set before the engine existed",held_out
+mactores.com,Mactores,C,"FDE_Startup_Tracker Cluster column, set before the engine existed",held_out
+kusho.ai,KushoAI,E,"FDE_Startup_Tracker Cluster column, set before the engine existed",held_out
+trylunar.ai,Lunar,C,"FDE_Startup_Tracker Cluster column, set before the engine existed",held_out

@@ -1,0 +1,21 @@
+name: eval
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      # uv run syncs the project and its dev group first, so no separate sync step is needed.
+      - name: Tests
+        run: uv run pytest -q
+      - name: Lint
+        run: uv run ruff check .
+      - name: Demo choice must not fall below the floor
+        run: uv run python -m scripts.golden_eval --csv results/eval_results.csv --floor-file evals/floor.json
