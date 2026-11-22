@@ -10,6 +10,10 @@ is queued. With --csv PATH it also writes one row per URL (errors included) to a
 file. For every URL it prints the full result as JSON, then the pitch markdown
 the API would serve, and a WARNING line when the grounding guard left pitch_note empty.
 
+Every CSV row carries approval_status: needs_review when a note exists, no_note otherwise. This script
+never writes "approved"; a person does that with scripts/approve.py (see its docstring). --resume keeps
+finished rows exactly as they are, approval fields included.
+
 It needs GEMINI_API_KEY and GROQ_API_KEY in the environment; with either missing it
 names it, says how to set it and exits 2. The Gemini path also
 uses Redis for its model cooldowns, so run this inside the worker container, which
@@ -212,6 +216,9 @@ CSV_COLUMNS = [
     "output_tokens",
     "cost_usd_est",
     "latency_ms",
+    "approval_status",
+    "approved_by",
+    "approved_at",
 ]
 
 
@@ -265,7 +272,8 @@ def cell(value):
 
 def csv_row(url, out=None, error=None):
     """Build the CSV row for one URL. Pass out for an enrich result, error for an exception."""
-    row = {"url": url, "error": error}
+    # real_run only ever writes needs_review or no_note. "approved" comes from scripts/approve.py.
+    row = {"url": url, "error": error, "approval_status": "no_note"}
     if out is not None:
         company = out["company"]
         row.update(
@@ -279,6 +287,7 @@ def csv_row(url, out=None, error=None):
             evidence=" | ".join(out.get("evidence") or []),
             prompt_version=out.get("prompt_version"),
             latency_ms=out.get("latency_ms"),
+            approval_status="needs_review" if out["pitch_note"] else "no_note",
         )
         usage = out.get("usage") or {}
         cost = usage.get("cost_usd_est")
