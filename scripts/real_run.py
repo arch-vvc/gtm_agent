@@ -207,6 +207,11 @@ CSV_COLUMNS = [
     "model",
     "error",
     "evidence",
+    "prompt_version",
+    "input_tokens",
+    "output_tokens",
+    "cost_usd_est",
+    "latency_ms",
 ]
 
 
@@ -272,6 +277,15 @@ def csv_row(url, out=None, error=None):
             model=out["model"],
             error=out["error"],
             evidence=" | ".join(out.get("evidence") or []),
+            prompt_version=out.get("prompt_version"),
+            latency_ms=out.get("latency_ms"),
+        )
+        usage = out.get("usage") or {}
+        cost = usage.get("cost_usd_est")
+        row.update(
+            input_tokens=usage.get("input_tokens"),
+            output_tokens=usage.get("output_tokens"),
+            cost_usd_est=None if cost is None else f"{cost:.6f}",
         )
         if company:
             row.update(

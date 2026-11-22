@@ -1,5 +1,7 @@
+import contextvars
 import os
 import re
+import time
 from typing import Literal
 
 import groq
@@ -12,6 +14,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 import facts
 import pitch
+import pricing
 from junk import describe_answer, is_junk, junk_fields  # noqa: F401 (is_junk is re exported)
 from scrape import get_description
 
@@ -29,6 +32,50 @@ GROQ_MODEL=GROQ_MODELS[0]
 # gpt-oss is a reasoning model: without these the default budget is spent thinking and no JSON comes back.
 GROQ_REASONING_EFFORT="low"
 GROQ_MAX_COMPLETION_TOKENS=4096
+
+
+# Bump this dated string whenever the prompt text changes. tests/test_usage_signals.py pins a hash of it.
+PROMPT_VERSION="pitch-2026-11-23.1"
+
+# Token usage of every model call made during one enrich() call. ask_gemini and ask_groq add to it
+# through record_usage, so their return shape stays (company, model).
+_USAGE=contextvars.ContextVar("usage_calls", default=None)
+
+
+def record_usage(model, input_tokens, output_tokens):
+    """Note the tokens of one model call. Does nothing outside enrich(). None means the provider sent no count."""
+    calls=_USAGE.get()
+    if calls is not None:
+        calls.append({"model": model, "input_tokens": input_tokens, "output_tokens": output_tokens})
+
+
+def gemini_tokens(response):
+    """(input, output) tokens of a Gemini response. Thinking tokens are billed as output, so they are added."""
+    usage=getattr(response, "usage_metadata", None)
+    if usage is None or usage.prompt_token_count is None or usage.candidates_token_count is None:
+        return None, None
+    return usage.prompt_token_count, usage.candidates_token_count+(usage.thoughts_token_count or 0)
+
+
+def groq_tokens(response):
+    """(input, output) tokens of a Groq response. completion_tokens already includes reasoning tokens."""
+    usage=getattr(response, "usage", None)
+    if usage is None or usage.prompt_tokens is None or usage.completion_tokens is None:
+        return None, None
+    return usage.prompt_tokens, usage.completion_tokens
+
+
+def summarise_usage(calls):
+    """Totals for the calls of one enrich() call. A total is None when any call had no count."""
+    inputs=[c["input_tokens"] for c in calls]
+    outputs=[c["output_tokens"] for c in calls]
+    costs=[pricing.estimate_cost(c["model"], c["input_tokens"], c["output_tokens"]) for c in calls]
+    return {
+        "calls": calls,
+        "input_tokens": None if None in inputs else sum(inputs),
+        "output_tokens": None if None in outputs else sum(outputs),
+        "cost_usd_est": sum(costs) if calls and None not in costs else None,
+    }
 
 
 class Company(BaseModel):
@@ -97,6 +144,7 @@ def ask_gemini(prompt):
                     "response_schema": Company,
                 },
             )
+            record_usage(model, *gemini_tokens(response))
             company=response.parsed
             if company is not None and junk_fields(company):
                 print(f"{model} answered with placeholder fields {junk_fields(company)}, trying the next model")
@@ -171,6 +219,7 @@ def ask_groq(prompt):
         print(f"Trying Groq {model}")
         try:
             response=groq_request(model, prompt)
+            record_usage(model, *groq_tokens(response))
             company=Company.model_validate_json(response.choices[0].message.content)
             if junk_fields(company):
                 print(f"Groq {model} answered with placeholder fields {junk_fields(company)}, trying the next model")
@@ -369,6 +418,21 @@ def junk_error(company, missing):
 
 
 def enrich(url, job_url=None):
+    """Enrich one site and add the production signals: prompt version, token usage, cost estimate, wall time."""
+    calls=[]
+    token=_USAGE.set(calls)
+    started=time.perf_counter()
+    try:
+        out=enrich_site(url, job_url)
+    finally:
+        _USAGE.reset(token)
+    out["prompt_version"]=PROMPT_VERSION
+    out["usage"]=summarise_usage(calls)
+    out["latency_ms"]=round((time.perf_counter()-started)*1000)
+    return out
+
+
+def enrich_site(url, job_url=None):
     print(f"Scraping {url}")
     site=get_description(url, job_url=job_url) if job_url else get_description(url)
     print("Scrape done")

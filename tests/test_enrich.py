@@ -54,7 +54,7 @@ def test_enrich_returns_company_from_mocked_scraper_and_llm(monkeypatch):
         "hiring_fde": None,
         "domain": None,
         "evidence": [],
-    }
+    } | {key: out[key] for key in ("prompt_version", "usage", "latency_ms")}
     assert "Online payment processing" in prompts[0]
     assert "Millions of companies" in prompts[0]
 
