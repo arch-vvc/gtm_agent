@@ -44,6 +44,13 @@ That prints the numbers above and exits 1 if demo choice falls below the floor i
 
 A live run needs Docker, a Gemini key and a Groq key (both free tiers). The full commands, the job post option and the HTTP service are in [docs/DESIGN.md](docs/DESIGN.md#running-it). The full results with note text stay private and gitignored. `results/eval_results.csv` is the public copy with no note text.
 
+## Built demos
+
+The engine sends one of two demos. Each is a standalone repo you can run in 60 seconds:
+
+- [Call QA for voice agents](https://github.com/OWNER/REPLACE_ME_call_qa): simulated callers and a judge check an agent against a client's script before go live.
+- [Invoice exception triage](https://github.com/OWNER/REPLACE_ME_invoice_exception_triage): three messy Tally or Zoho exports in, every three way match mismatch flagged and explained.
+
 ## Limits
 
 - **The held out split was fixed after seeing results.** Only the 7 never run companies are a clean test, and only 2 of the 10 held out rows are answered so far.

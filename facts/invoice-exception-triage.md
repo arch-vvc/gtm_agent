@@ -1,6 +1,6 @@
 # Fact sheet: invoice exception triage demo
 
-Repo: TBD (Bobby adds the standalone repo URL)
+Repo: https://github.com/OWNER/REPLACE_ME_invoice_exception_triage
 Names: invoice exception triage, invoice triage
 
 ## What it does

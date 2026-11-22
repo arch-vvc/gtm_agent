@@ -1,6 +1,6 @@
 # Fact sheet: voice agent call QA demo
 
-Repo: TBD (Bobby adds the standalone repo URL)
+Repo: https://github.com/OWNER/REPLACE_ME_call_qa
 Names: voice agent call QA, call QA
 
 ## What it does
