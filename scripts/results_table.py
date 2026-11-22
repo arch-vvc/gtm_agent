@@ -96,7 +96,7 @@ def findings(row):
     note = row.get("pitch_note") or ""
     if note.strip():
         found += [md_escape(clean(item)) for item in pitch.check_pitch_claims(note)]
-        found += [md_escape(clean(item)) for item in pitch.check_pitch_note(note)]
+        found += [md_escape(clean(item)) for item in pitch.check_pitch_note(note, pitch.demo_built(row.get("cluster")))]
     return "; ".join(found) or NOTHING_FOUND
 
 

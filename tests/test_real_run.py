@@ -179,7 +179,7 @@ def test_csv_site_error_row_has_the_error_text(monkeypatch, tmp_path):
 def test_csv_pitch_note_with_commas_quotes_and_newlines_round_trips(monkeypatch, tmp_path):
     path = tmp_path / "results.csv"
     note = AP_NOTE + ' Line two, with "quotes", and commas.\nLine three.'
-    monkeypatch.setattr(real_run.pitch, "pitch_violations", lambda pitch_note, site: [])
+    monkeypatch.setattr(real_run.pitch, "pitch_violations", lambda pitch_note, site, **checks: [])
     fake_models(monkeypatch, [(make_company("B", note), "gemini-3.5-flash")])
 
     real_run.main(["--csv", str(path), "ledgerly.example"])
@@ -336,7 +336,7 @@ def test_cell_leaves_normal_text_digits_and_empty_alone():
 def test_csv_pitch_note_starting_with_plus_gets_an_apostrophe(monkeypatch, tmp_path):
     path = tmp_path / "results.csv"
     note = "+cmd " + AP_NOTE
-    monkeypatch.setattr(real_run.pitch, "pitch_violations", lambda pitch_note, site: [])
+    monkeypatch.setattr(real_run.pitch, "pitch_violations", lambda pitch_note, site, **checks: [])
     fake_models(monkeypatch, [(make_company("B", note), "gemini-3.5-flash")])
 
     real_run.main(["--csv", str(path), "ledgerly.example"])

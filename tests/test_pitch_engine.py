@@ -56,6 +56,11 @@ I built it to show the rupees at risk before anyone opens a single row.
 
 Loom: [LOOM_URL] Repo: [REPO_URL]"""
 
+# A cluster C to G note: future tense, and the repo link only, since there is no Loom to show.
+NO_DEMO_NOTE = AP_NOTE.replace("I built it", "I would build it").replace(
+    "Loom: [LOOM_URL] Repo: [REPO_URL]", "Repo: [REPO_URL]"
+)
+
 VOICE_NOTE = """Echobench is a strong fit for a demo that proves a voice agent follows a client script before go live.
 
 The careers page lists forward deployed roles, so tuning an agent to each client is already its own deployment work.
@@ -130,7 +135,7 @@ def test_voice_site_maps_cluster_a_to_voice_agent_call_qa(monkeypatch):
 
 def test_cluster_without_a_built_demo_says_none_built(monkeypatch):
     use_site(monkeypatch, AP_SITE)
-    script_ask(monkeypatch, [(make_company("E", AP_NOTE.replace("I built it", "I would build it")), "fake-model")])
+    script_ask(monkeypatch, [(make_company("E", NO_DEMO_NOTE), "fake-model")])
 
     assert enrich.enrich("ledgerly.example")["demo"] == "none built"
 
@@ -162,7 +167,7 @@ The site says it operates your desktop apps like a person would, so every custom
 Claims and data migration are the tasks it names, and each needs proof that the agent clicks the right thing.
 I can show how that proof would look for one workflow.
 
-Loom: [LOOM_URL] Repo: [REPO_URL]"""
+Repo: [REPO_URL]"""
 
 
 def test_cluster_g_maps_to_none_built_through_enrich(monkeypatch):
@@ -796,7 +801,8 @@ def test_prompt_has_the_future_tense_rule_for_clusters_with_no_demo():
     prompt = enrich.build_prompt(AP_SITE)
 
     assert "If you choose cluster C, D, E, F or G (the labels that say not built yet, no demo built yet or no default demo)" in prompt
-    assert "this rule overrides rules 1 to 3 on the demo" in prompt
+    assert "this rule overrides rules 1 to 3 and 12 on the demo" in prompt
+    assert "Keep the structure, ending with Repo: [REPO_URL] alone." in prompt
     assert "none built" not in prompt
     assert "If you choose cluster A or B, present the demo as something I built" in prompt
     assert "what I built (clusters A and B) or would build (the other clusters)" in prompt
@@ -983,7 +989,7 @@ def test_claims_violations_reach_the_retry_prompt_through_enrich(monkeypatch):
 
 def test_built_claim_for_a_cluster_without_a_demo_is_rejected_and_retried(monkeypatch):
     use_site(monkeypatch, AP_SITE)
-    future = AP_NOTE.replace("I built it", "I would build it")
+    future = NO_DEMO_NOTE
     prompts = script_ask(monkeypatch, [(make_company("G", AP_NOTE), "first"), (make_company("G", future), "second")])
 
     out = enrich.enrich("ledgerly.example")
@@ -995,7 +1001,7 @@ def test_built_claim_for_a_cluster_without_a_demo_is_rejected_and_retried(monkey
 
 def test_guard_flags_i_built_for_cluster_g_and_not_i_would_build():
     built = make_company("G", AP_NOTE)
-    future = make_company("G", AP_NOTE.replace("I built it", "I would build it"))
+    future = make_company("G", NO_DEMO_NOTE)
 
     assert "claims a built demo for a cluster with no demo built" in enrich.guard_violations(built, AP_SITE)
     assert enrich.guard_violations(future, AP_SITE) == []

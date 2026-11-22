@@ -17,7 +17,7 @@ SITE = {
     "about": "Millions of companies use Stripe to accept payments.",
     "error": None,
 }
-NOTE = "Stripe processes payments for online businesses, so a payments demo fits.\n\nLoom: [LOOM_URL] Repo: [REPO_URL]"
+NOTE = "Stripe processes payments for online businesses, so a payments demo fits.\n\nRepo: [REPO_URL]"
 COMPANY = Company(
     industry="Fintech",
     what_they_sell="Payment processing APIs",

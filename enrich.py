@@ -323,10 +323,10 @@ Rules for pitch_note:
 6. No flattery or hype words such as perfectly, excited, love, passionate.
 7. Name only products and customers that appear in the text above. No invented numbers.
 8. Describe a demo ONLY with the facts above. Do not claim integrations, metrics, interfaces, data sources, file formats or features that are not listed. You may say how you WOULD adapt it, in the future tense, using the tailoring changes. Past tense is allowed only for "I built"; everything about adapting the demo to this company is future tense ("I would adapt ...").
-9. If you choose cluster C, D, E, F or G (the labels that say not built yet, no demo built yet or no default demo), this rule overrides rules 1 to 3 on the demo: do not say or imply that a demo was built, and do not mention or describe the demos from clusters A and B. Write in the future tense naming ONE concrete first deliverable drawn from the tailoring changes and, where the cluster label gives one, the planned demo, and offer to show a first version. Keep the structure.
+9. If you choose cluster C, D, E, F or G (the labels that say not built yet, no demo built yet or no default demo), this rule overrides rules 1 to 3 and 12 on the demo: do not say or imply that a demo was built, and do not mention or describe the demos from clusters A and B. Write in the future tense naming ONE concrete first deliverable drawn from the tailoring changes and, where the cluster label gives one, the planned demo, and offer to show a first version. Keep the structure, ending with {pitch.NOT_BUILT_LAST_LINE} alone.
 10. Include at least one concrete detail taken from the text above, in the conclusion line or the first reason: a named customer, a product feature or a short phrase from the company's own site.
 11. Do not give dates, deadlines or time commitments (no "next week", "by Friday", "within 48 hours"). An offer to show a first version carries no date.
-12. The last line must be exactly: Loom: {pitch.LOOM} Repo: {pitch.REPO}"""
+12. The last line must be exactly: {pitch.BUILT_LAST_LINE}"""
 
 
 # The fact sheet of each built demo, keyed by cluster. Other clusters have no built demo, so they get no facts.
@@ -350,10 +350,11 @@ def guard_violations(company, site):
     A copy of the site dict is used so the original is never changed.
     """
     guard_site={**site, "demo_facts": DEMO_FACTS_BY_CLUSTER.get(company.cluster)}
+    built=pitch.demo_built(company.cluster)
     if REQUIRE_EVIDENCE:
-        violations=pitch.pitch_violations(company.pitch_note, guard_site, evidence=company.evidence)
+        violations=pitch.pitch_violations(company.pitch_note, guard_site, evidence=company.evidence, built=built)
     else:
-        violations=pitch.pitch_violations(company.pitch_note, guard_site)
+        violations=pitch.pitch_violations(company.pitch_note, guard_site, built=built)
     if company.cluster not in DEMO_FACTS_BY_CLUSTER and pitch.claims_built_demo(company.pitch_note):
         violations.append("claims a built demo for a cluster with no demo built")
     return violations

@@ -30,6 +30,14 @@ CLUSTER_DEMOS = {
 
 LOOM = "[LOOM_URL]"
 REPO = "[REPO_URL]"
+# A cluster with a built demo links its Loom. One with no demo has nothing to film, so it links the repo only.
+BUILT_LAST_LINE = f"Loom: {LOOM} Repo: {REPO}"
+NOT_BUILT_LAST_LINE = f"Repo: {REPO}"
+
+
+def demo_built(cluster):
+    """Say whether the cluster's demo exists, so the note may say "I built" and link a Loom."""
+    return CLUSTER_DEMOS.get(cluster, "none built") != "none built"
 
 MAX_WORDS = 150
 
@@ -130,11 +138,12 @@ def normalise_dashes(note):
     return re.sub(r"[ \t]{2,}", " ", cleaned)
 
 
-def check_pitch_note(note):
+def check_pitch_note(note, built=True):
     """Return the style violations of a pitch note. An empty list means it passes.
 
-    Checks: at most 150 words, no hyphen or dash characters, and the last
-    non blank line contains the Loom placeholder and ends with the repo one.
+    Checks: at most 150 words, no hyphen or dash characters, and the last non blank
+    line. With a built demo it contains the Loom placeholder and ends with the repo
+    one. With no demo built (built=False) it is exactly NOT_BUILT_LAST_LINE.
     """
     note = note or ""
     violations = []
@@ -150,7 +159,10 @@ def check_pitch_note(note):
 
     lines = [line.strip() for line in note.splitlines() if line.strip()]
     last_line = lines[-1] if lines else ""
-    if LOOM not in last_line or not last_line.endswith(REPO):
+    if not built:
+        if last_line != NOT_BUILT_LAST_LINE:
+            violations.append(f"last line must be exactly: {NOT_BUILT_LAST_LINE} (no demo is built, so no Loom)")
+    elif LOOM not in last_line or not last_line.endswith(REPO):
         violations.append(f"last line must contain {LOOM} and end with {REPO}")
 
     return violations
@@ -326,14 +338,16 @@ CLAIM_VERBS = {
     "set up": "set up",
 }
 # "I adapted", "I have adapted", "I had adapted" and "I've adapted", with an optional adverb
-# such as "I also adapted", also after First, Second, Third or a comma.
-# Only the first person is checked, so "they adapted" and "Adapted from" pass.
+# such as "I also adapted", also after First, Second, Third or a comma. "We adapted" and
+# "we've adapted" are the same claim. Only the first person is checked, so "they adapted"
+# and "Adapted from" pass.
 CLAIM_ADVERBS = (
     "also|then|just|now|later|quickly|already|previously|even|further|additionally|subsequently|recently|personally"
 )
-FIRST_PERSON = rf"\bI(?:\s+(?:have|had)|['{CURLY_APOSTROPHE}]ve)?\s+(?:(?:{CLAIM_ADVERBS})\s+)?"
+PERFECT_AND_ADVERB = rf"(?:\s+(?:have|had)|['{CURLY_APOSTROPHE}]ve)?\s+(?:(?:{CLAIM_ADVERBS})\s+)?"
+FIRST_PERSON = r"\bI" + PERFECT_AND_ADVERB
 CLAIM_PATTERN = re.compile(
-    FIRST_PERSON + "(" + "|".join(verb.replace(" ", r"\s+") for verb in CLAIM_VERBS) + r")\b",
+    r"\b(?:I|we)" + PERFECT_AND_ADVERB + "(" + "|".join(verb.replace(" ", r"\s+") for verb in CLAIM_VERBS) + r")\b",
     re.IGNORECASE,
 )
 BUILT_PATTERN = re.compile(FIRST_PERSON + r"built\b", re.IGNORECASE)
@@ -375,6 +389,11 @@ OUTCOME_WORDS = re.compile(
 )
 # A sentence by the author about the demo ("I would reduce ...", "First, we would improve ...") is not a claim about the company.
 AUTHOR_SENTENCE = re.compile(r"^\W*(?:(?:first|second|third|finally|lastly)\W+)?(?:i|we)\b", re.IGNORECASE)
+# A size put on a result ("in half", "40%", "3x", "millions"). An author sentence with one is a claim after all.
+MAGNITUDE_WORDS = re.compile(
+    r"\b(?:in|by)\s+half\b|\b\d+(?:\.\d+)?\s*(?:%|x\b|percent\b)|\b(?:twice|tenfold|millions|thousands|lakhs?|crores?)\b",
+    re.IGNORECASE,
+)
 SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 MIN_SHARED_WORDS = 3
 LINK_WORDS = frozenset(
@@ -420,14 +439,16 @@ def content_words(text):
 
 def check_outcome_claims(note, evidence):
     """Return one violation per sentence that claims a result for the company and shares fewer than
-    3 content words with every evidence quote. Sentences by the author and the Loom line are skipped."""
+    3 content words with every evidence quote. The Loom line is skipped, and so are sentences by the
+    author unless they put a size on the result ("I would cut your churn in half")."""
     quote_words = [content_words(quote) for quote in (evidence or []) if isinstance(quote, str)]
     violations = []
     for line in (note or "").splitlines():
         if LOOM in line:
             continue
         for sentence in SENTENCE_SPLIT.split(line.strip()):
-            if not sentence or AUTHOR_SENTENCE.match(sentence) or not OUTCOME_WORDS.search(sentence):
+            by_author = AUTHOR_SENTENCE.match(sentence) and not MAGNITUDE_WORDS.search(sentence)
+            if not sentence or by_author or not OUTCOME_WORDS.search(sentence):
                 continue
             shared = max((len(content_words(sentence) & words) for words in quote_words), default=0)
             if shared < MIN_SHARED_WORDS:
@@ -435,13 +456,49 @@ def check_outcome_claims(note, evidence):
     return violations
 
 
-def pitch_violations(note, site, evidence=None):
+# "The demo loads ..." in the present tense. What follows must come from the demo's own facts.
+DEMO_ACTION = re.compile(
+    r"\b(?:the|my|this)\s+demo\s+(?:already\s+|now\s+)?(?:loads|uses|reads|runs|handles|supports|connects|"
+    r"integrates|ingests|processes|imports|pulls|includes|contains|covers|simulates|scores|tests)\b",
+    re.IGNORECASE,
+)
+WORD = re.compile(r"\b[^\W\d_]\w*")
+
+
+def check_demo_claims(note, site):
+    """Return one violation per sentence that says the demo already works with a name its facts do not list.
+
+    "The demo loads real Acme billing scripts" claims work that was never done. Only the words after
+    the demo's verb are checked, and only when the site dict carries the chosen demo's facts.
+    """
+    facts = site.get("demo_facts")
+    if not isinstance(facts, str):
+        return []
+    fact_words = set(normalise_quote(facts).split())
+    violations = []
+    for line in (note or "").splitlines():
+        for sentence in SENTENCE_SPLIT.split(line.strip()):
+            found = DEMO_ACTION.search(sentence)
+            if not found:
+                continue
+            names = [word for word in WORD.findall(sentence[found.end() :]) if word[0].isupper()]
+            unlisted = list(dict.fromkeys(name for name in names if name.lower() not in fact_words))
+            if unlisted:
+                violations.append(
+                    f"note says the demo already works with {', '.join(unlisted)}: '{sentence[:120]}' "
+                    "(the demo does not do that yet; write 'I would adapt the demo to ...')"
+                )
+    return violations
+
+
+def pitch_violations(note, site, evidence=None, built=True):
     """Return style violations, claim violations plus one line for the ungrounded names, if any.
 
-    When evidence (a list of quotes, possibly empty) is given, the quotes must be real and every
-    sentence that claims a result for the company must be backed by one. None skips those checks.
+    built says whether the cluster has a demo, which decides the last line. When evidence (a list
+    of quotes, possibly empty) is given, the quotes must be real and every sentence that claims a
+    result for the company must be backed by one. None skips those checks.
     """
-    violations = check_pitch_note(note) + check_pitch_claims(note)
+    violations = check_pitch_note(note, built) + check_pitch_claims(note) + check_demo_claims(note, site)
     missing = ungrounded_names(note, build_corpus(site))
     if missing:
         violations.append("names not found on the site: " + ", ".join(missing))
