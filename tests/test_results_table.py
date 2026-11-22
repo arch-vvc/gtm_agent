@@ -135,96 +135,6 @@ def test_no_csv_prints_one_plain_line_and_exits_zero(tmp_path, capsys):
     assert captured.err == ""
 
 
-@pytest.mark.parametrize("flag", ["--write-readme", "--check"])
-def test_no_csv_leaves_the_readme_alone_in_every_mode(tmp_path, capsys, flag):
-    readme = readme_with(tmp_path, "placeholder")
-    before = readme.read_bytes()
-
-    assert results_table.main(["--csv", str(tmp_path / "nope.csv"), "--readme", str(readme), flag]) == 0
-
-    assert readme.read_bytes() == before
-    assert len(capsys.readouterr().out.strip().splitlines()) == 1
-
-
-def test_write_readme_from_a_synthetic_csv_touches_only_the_block(tmp_path, capsys):
-    csv_path = write_csv(tmp_path / "real_results.csv", [make_row(name="Acme", cluster="B")])
-    readme = readme_with(tmp_path, "placeholder")
-
-    assert results_table.main(["--csv", str(csv_path), "--readme", str(readme), "--write-readme"]) == 0
-
-    text = readme.read_text(encoding="utf-8")
-    assert text.startswith("before\n") and text.endswith("after\n")
-    assert "| Acme |" in text and "placeholder" not in text
-
-
-def test_malformed_csv_exits_two_with_one_clear_line(tmp_path, capsys):
-    path = tmp_path / "bad.csv"
-    path.write_text("name,url\nx,y\n", encoding="utf-8")
-    readme = readme_with(tmp_path, "placeholder")
-    before = readme.read_bytes()
-
-    assert results_table.main(["--csv", str(path), "--readme", str(readme), "--write-readme"]) == 2
-
-    err = capsys.readouterr().err
-    assert "pitch_note" in err and len(err.strip().splitlines()) == 1
-    assert readme.read_bytes() == before
-
-
-
-def readme_with(tmp_path, body="old"):
-    path = tmp_path / "README.md"
-    path.write_text(f"before\n{results_table.START_MARKER}\n{body}\n{results_table.END_MARKER}\nafter\n", encoding="utf-8")
-    return path
-
-
-def test_write_readme_replaces_only_the_block_and_is_idempotent(tmp_path):
-    csv_path = write_csv(tmp_path / "r.csv", [make_row(name="Acme", cluster="A", pitch_note=NOTE)])
-    readme = readme_with(tmp_path)
-    args = ["--csv", str(csv_path), "--readme", str(readme), "--write-readme"]
-
-    assert results_table.main(args) == 0
-    first = readme.read_text(encoding="utf-8")
-    assert results_table.main(args) == 0
-
-    assert readme.read_text(encoding="utf-8") == first
-    assert first.startswith("before\n<!-- results:start -->\n| Company |")
-    assert first.endswith("<!-- results:end -->\nafter\n")
-    assert "old" not in first
-
-
-def test_missing_or_misordered_markers_fail(tmp_path, capsys):
-    csv_path = write_csv(tmp_path / "r.csv", [make_row(name="Acme")])
-    missing = tmp_path / "missing.md"
-    missing.write_text("no markers\n", encoding="utf-8")
-    swapped = tmp_path / "swapped.md"
-    swapped.write_text(f"{results_table.END_MARKER}\n{results_table.START_MARKER}\n", encoding="utf-8")
-
-    for readme in (missing, swapped):
-        before = readme.read_text(encoding="utf-8")
-        assert results_table.main(["--csv", str(csv_path), "--readme", str(readme), "--write-readme"]) == 1
-        assert readme.read_text(encoding="utf-8") == before
-        assert "error:" in capsys.readouterr().err
-
-
-def test_check_exit_codes(tmp_path, capsys):
-    csv_path = write_csv(tmp_path / "r.csv", [make_row(name="Acme")])
-    readme = readme_with(tmp_path)
-    args = ["--csv", str(csv_path), "--readme", str(readme)]
-
-    assert results_table.main([*args, "--check"]) == 1
-    assert "out of date" in capsys.readouterr().out
-    results_table.main([*args, "--write-readme"])
-    assert results_table.main([*args, "--check"]) == 0
-
-
-def test_real_committed_results():
-    block = results_table.build_block(results_table.read_rows(ROOT / "results" / "real_results.csv"))
-
-    assert not BAD_DASHES.search(block)
-    # The CSV changes with every live run, so check its shape, not one company's row.
-    assert any(line.startswith("| ") for line in block.splitlines())
-
-
 INJECTION = "<script>alert(1)</script> [x](http://evil) ![x](http://evil/a.png) `c`"
 
 
@@ -269,18 +179,6 @@ def test_fixed_text_stays_unescaped():
     assert "none found by the automatic checks" in results_table.findings(make_row(name="X"))
 
 
-def test_write_readme_has_no_raw_html_or_links(tmp_path):
-    csv_path = write_csv(tmp_path / "r.csv", [make_row(name="Acme", cluster_reason=INJECTION, pitch_note=INJECTION)])
-    readme = readme_with(tmp_path)
-
-    assert results_table.main(["--csv", str(csv_path), "--readme", str(readme), "--write-readme"]) == 0
-
-    text = readme.read_text(encoding="utf-8")
-    assert "<script" not in text
-    assert "](http" not in text
-    assert not BAD_DASHES.search(text)
-
-
 def test_utf8_bom_does_not_break_first_column(tmp_path, capsys):
     path = tmp_path / "bom.csv"
     path.write_bytes(b"\xef\xbb\xbfname,url,pitch_note\nAcme,a.co,hello\n")
@@ -306,17 +204,6 @@ def test_directory_as_csv_fails_clearly(tmp_path, capsys):
     assert str(tmp_path) in capsys.readouterr().err
 
 
-def test_unreadable_readme_fails_clearly(tmp_path, capsys):
-    csv_path = write_csv(tmp_path / "r.csv", [make_row(name="Acme")])
-    bad = tmp_path / "README.md"
-    bad.write_bytes(b"\xff\xfe\xfa")
-
-    assert results_table.main(["--csv", str(csv_path), "--readme", str(bad), "--check"]) == 1
-
-    err = capsys.readouterr().err
-    assert "README.md" in err and len(err.strip().splitlines()) == 1
-
-
 def test_missing_columns_fail_clearly(tmp_path, capsys):
     no_note = tmp_path / "a.csv"
     no_note.write_text("name,url\nx,y\n", encoding="utf-8")
@@ -327,3 +214,63 @@ def test_missing_columns_fail_clearly(tmp_path, capsys):
     assert "pitch_note" in capsys.readouterr().err
     assert results_table.main(["--csv", str(no_id)]) == 2
     assert "name" in capsys.readouterr().err
+
+
+def test_real_local_results():
+    path = ROOT / "results" / "real_results.csv"
+    if not path.exists():
+        pytest.skip("results/real_results.csv is private and not in a clean clone")
+    block = results_table.build_block(results_table.read_rows(path))
+
+    assert not BAD_DASHES.search(block)
+    # The CSV changes with every live run, so check its shape, not one company's row.
+    assert any(line.startswith("| ") for line in block.splitlines())
+
+
+def test_malformed_csv_exits_two_with_one_clear_line(tmp_path, capsys):
+    path = tmp_path / "bad.csv"
+    path.write_text("name,url\nx,y\n", encoding="utf-8")
+
+    assert results_table.main(["--csv", str(path), "--write", "--out", str(tmp_path / "o.md")]) == 2
+
+    err = capsys.readouterr().err
+    assert "pitch_note" in err and len(err.strip().splitlines()) == 1
+    assert not (tmp_path / "o.md").exists()
+
+
+def test_default_output_is_gitignored_private_file():
+    assert results_table.DEFAULT_OUT == "private/results_table.md"
+    ignored = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert "private/" in ignored
+    assert "results/real_results.csv" in ignored
+
+
+def test_check_compares_private_file(tmp_path, capsys):
+    csv_path = write_csv(tmp_path / "r.csv", [make_row(name="Acme", cluster="A", pitch_note=NOTE)])
+    out = tmp_path / "private" / "results_table.md"
+    args = ["--csv", str(csv_path), "--out", str(out)]
+
+    assert results_table.main([*args, "--check"]) == 1
+    assert "out of date" in capsys.readouterr().out
+    assert results_table.main([*args, "--write"]) == 0
+    assert out.read_text(encoding="utf-8").startswith("| Company |")
+    assert results_table.main([*args, "--check"]) == 0
+    out.write_text("stale\n", encoding="utf-8")
+    assert results_table.main([*args, "--check"]) == 1
+
+
+def test_check_skips_on_a_clean_clone(tmp_path, capsys):
+    args = ["--csv", str(tmp_path / "absent.csv"), "--out", str(tmp_path / "out.md"), "--check"]
+
+    assert results_table.main(args) == 0
+
+    assert "skipped" in capsys.readouterr().out
+    assert not (tmp_path / "out.md").exists()
+
+
+def test_write_without_a_csv_writes_nothing(tmp_path, capsys):
+    args = ["--csv", str(tmp_path / "absent.csv"), "--out", str(tmp_path / "out.md"), "--write"]
+
+    assert results_table.main(args) == 0
+
+    assert not (tmp_path / "out.md").exists()

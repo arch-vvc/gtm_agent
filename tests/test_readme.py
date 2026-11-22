@@ -1,4 +1,4 @@
-"""Checks on README.md that need no network: the promised strings, the cluster table and the commands."""
+"""Checks on README.md and docs/DESIGN.md that need no network: the promised strings, the cluster table and the commands."""
 
 import re
 from pathlib import Path
@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 README = (ROOT / "README.md").read_text(encoding="utf-8")
 DESIGN = (ROOT / "docs" / "DESIGN.md").read_text(encoding="utf-8")
+EVAL_DOC = (ROOT / "docs" / "EVAL.md").read_text(encoding="utf-8")
 EN_DASH = chr(0x2013)
 EM_DASH = chr(0x2014)
 
@@ -22,32 +23,9 @@ def test_pitch_endpoint_is_documented():
 
 
 def test_no_en_or_em_dash():
-    for text in (README, DESIGN):
+    for text in (README, DESIGN, EVAL_DOC):
         assert EN_DASH not in text
         assert EM_DASH not in text
-
-
-def test_results_section_is_a_placeholder_or_a_generated_table():
-    results = section("Results")
-    assert README.count("<!-- results:start -->") == 1
-    assert README.count("<!-- results:end -->") == 1
-    assert README.index("<!-- results:start -->") < README.index("<!-- results:end -->")
-    assert results.index("<!-- results:start -->") < results.index("<!-- results:end -->")
-    block = results.split("<!-- results:start -->")[1].split("<!-- results:end -->")[0]
-    table_rows = [line for line in block.splitlines() if line.startswith("|")]
-    if "PLACEHOLDER" in block:
-        assert "results/real_results.csv" in results
-        assert len(table_rows[2:]) == 1  # skip the header and the separator
-        assert table_rows[2].startswith("| PLACEHOLDER |")
-    else:
-        assert table_rows[0].startswith("| Company |")
-        assert len(table_rows) >= 3
-
-
-def test_results_refresh_command_is_documented():
-    assert "scripts.results_table --write-readme" in section("Results")
-    assert "--check" in section("Results")
-    assert "scripts.results_table --write-readme" in section("Try it")
 
 
 def test_cluster_table_lists_a_to_g_and_g_has_no_demo():
@@ -66,37 +44,52 @@ def test_no_stale_cluster_ranges():
         assert "C to F" not in text
 
 
-def test_scripts_named_in_the_readme_exist():
+def test_readme_is_short_and_has_no_company_rows():
+    lines = README.splitlines()
+    assert len(lines) <= 90
+    assert "| Peakflo |" not in README
+    assert not [line for line in lines if line.startswith("| Company")]
+    assert "<!-- results:start -->" not in README
+    headings = re.findall(r"^## (.+)$", README, re.MULTILINE)
+    assert headings[0] == "Results"
+    assert "What I tried, where it stopped, what is next" in headings
+    assert "docs/EVAL.md" in README and "docs/DESIGN.md" in README
+
+
+def test_readme_scripts_exist():
     modules = set(re.findall(r"\bscripts\.([a-z_]+)", README))
-    assert "real_run" in modules
+    assert "golden_eval" in modules
     for module in modules:
         assert (ROOT / "scripts" / f"{module}.py").is_file(), f"scripts/{module}.py is named in the README but missing"
 
 
-def test_compose_services_in_commands_exist():
-    compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
-    services = set(re.findall(r"docker compose run --rm (?:-v \"[^\"]*\" )*(\w+)", README))
-    assert "worker" in services
-    for service in services:
-        assert re.search(rf"^  {service}:$", compose, re.MULTILINE), f"{service} is not a service in docker-compose.yml"
-
-
-def test_csv_flag_is_documented():
-    assert "--csv" in README
-
-
-def test_readme_is_short_and_in_the_agreed_order():
-    assert len(README.splitlines()) < 160
-    headings = re.findall(r"^## (.+)$", README, re.MULTILINE)
-    wanted = ["Results", "Try it", "How it works", "Limits", "Status"]
-    assert [h for h in headings if h in wanted] == wanted
-    assert len(section("How it works").strip().splitlines()) <= 12
-    assert len(section("Status").strip().splitlines()) <= 8
-
-
 def test_design_notes_hold_the_moved_sections():
-    for title in ("API", "Clusters and demos", "How the grounding guard works", "Careers page", "Answer quality and duplicates", "How the Gemini to Groq fallback works", "Database migration", "Status history"):
+    titles = (
+        "API", "Clusters and demos", "How the grounding guard works", "Careers page",
+        "Answer quality and duplicates", "How the Gemini to Groq fallback works", "Database migration",
+        "Running it", "Limits", "Status history",
+    )  # fmt: skip
+    for title in titles:
         assert re.search(rf"^## {re.escape(title)}$", DESIGN, re.MULTILINE), title
+
+
+def test_design_keeps_the_run_commands_and_the_private_table_note():
+    running = section("Running it", DESIGN)
+    assert "scripts.real_run" in running and "--csv" in running
+    assert "docker compose run --rm" in running
+    assert "private/results_table.md" in running
+    for module in set(re.findall(r"\bscripts\.([a-z_]+)", running)):
+        assert (ROOT / "scripts" / f"{module}.py").is_file(), module
+    compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    for service in set(re.findall(r"docker compose run --rm (?:-v \"[^\"]*\" )*(\w+)", running)):
+        assert re.search(rf"^  {service}:$", compose, re.MULTILINE), service
+
+
+def test_eval_doc_has_the_failure_buckets():
+    for bucket in ("A)", "B)", "C)", "D)", "E)"):
+        assert bucket in EVAL_DOC
+    for name in ("Certa", "DevRev", "CollectWise", "LiveKit"):
+        assert name in EVAL_DOC
 
 
 def test_status_records_the_live_runs_honestly():
@@ -105,7 +98,6 @@ def test_status_records_the_live_runs_honestly():
     assert "NOT yet re-run live" in status
     assert "Simular" in status
     assert "no run against live" not in status
-
 
 
 def test_status_records_the_latest_live_run_and_the_unverified_fixes():
