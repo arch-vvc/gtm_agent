@@ -1,5 +1,7 @@
+import contextvars
 import os
 import re
+import time
 from typing import Literal
 
 import groq
@@ -10,7 +12,9 @@ from google.genai import errors, types
 from groq import Groq
 from pydantic import BaseModel, Field, ValidationError
 
+import facts
 import pitch
+import pricing
 from junk import describe_answer, is_junk, junk_fields  # noqa: F401 (is_junk is re exported)
 from scrape import get_description
 
@@ -28,6 +32,50 @@ GROQ_MODEL=GROQ_MODELS[0]
 # gpt-oss is a reasoning model: without these the default budget is spent thinking and no JSON comes back.
 GROQ_REASONING_EFFORT="low"
 GROQ_MAX_COMPLETION_TOKENS=4096
+
+
+# Bump this dated string whenever the prompt text changes. tests/test_usage_signals.py pins a hash of it.
+PROMPT_VERSION="pitch-2026-11-23.1"
+
+# Token usage of every model call made during one enrich() call. ask_gemini and ask_groq add to it
+# through record_usage, so their return shape stays (company, model).
+_USAGE=contextvars.ContextVar("usage_calls", default=None)
+
+
+def record_usage(model, input_tokens, output_tokens):
+    """Note the tokens of one model call. Does nothing outside enrich(). None means the provider sent no count."""
+    calls=_USAGE.get()
+    if calls is not None:
+        calls.append({"model": model, "input_tokens": input_tokens, "output_tokens": output_tokens})
+
+
+def gemini_tokens(response):
+    """(input, output) tokens of a Gemini response. Thinking tokens are billed as output, so they are added."""
+    usage=getattr(response, "usage_metadata", None)
+    if usage is None or usage.prompt_token_count is None or usage.candidates_token_count is None:
+        return None, None
+    return usage.prompt_token_count, usage.candidates_token_count+(usage.thoughts_token_count or 0)
+
+
+def groq_tokens(response):
+    """(input, output) tokens of a Groq response. completion_tokens already includes reasoning tokens."""
+    usage=getattr(response, "usage", None)
+    if usage is None or usage.prompt_tokens is None or usage.completion_tokens is None:
+        return None, None
+    return usage.prompt_tokens, usage.completion_tokens
+
+
+def summarise_usage(calls):
+    """Totals for the calls of one enrich() call. A total is None when any call had no count."""
+    inputs=[c["input_tokens"] for c in calls]
+    outputs=[c["output_tokens"] for c in calls]
+    costs=[pricing.estimate_cost(c["model"], c["input_tokens"], c["output_tokens"]) for c in calls]
+    return {
+        "calls": calls,
+        "input_tokens": None if None in inputs else sum(inputs),
+        "output_tokens": None if None in outputs else sum(outputs),
+        "cost_usd_est": sum(costs) if calls and None not in costs else None,
+    }
 
 
 class Company(BaseModel):
@@ -96,6 +144,7 @@ def ask_gemini(prompt):
                     "response_schema": Company,
                 },
             )
+            record_usage(model, *gemini_tokens(response))
             company=response.parsed
             if company is not None and junk_fields(company):
                 print(f"{model} answered with placeholder fields {junk_fields(company)}, trying the next model")
@@ -170,6 +219,7 @@ def ask_groq(prompt):
         print(f"Trying Groq {model}")
         try:
             response=groq_request(model, prompt)
+            record_usage(model, *groq_tokens(response))
             company=Company.model_validate_json(response.choices[0].message.content)
             if junk_fields(company):
                 print(f"Groq {model} answered with placeholder fields {junk_fields(company)}, trying the next model")
@@ -208,18 +258,13 @@ def ask(prompt):
     return first_junk
 
 
-# Fixed fact sheets for the built demos. The pitch note may describe a demo only with these facts. Edit them here.
-DEMO_FACTS_A=(
-    "A: voice agent call QA takes a client's call script (SOP), runs about 20 simulated callers against a voice agent, "
-    "including Hinglish and adversarial callers, has a judge score every call against the script, and shows the exact "
-    "failing turns on a dashboard so one prompt fix can be tested and the pass rate compared."
-)
-DEMO_FACTS_B=(
-    "B: invoice exception triage takes three messy exports (invoices, purchase orders and payments) such as from Tally "
-    "or Zoho, flags every three way match mismatch (wrong amounts, duplicates, missing purchase orders and GST errors), "
-    "shows the rupees at risk, and lets you click a row to see the raw rows and a one sentence explanation."
-)
+# The fact sheets of the built demos live in facts/*.md. The pitch note may describe a demo only with these facts.
+SHEET_A=facts.load("call-qa")
+SHEET_B=facts.load("invoice-exception-triage")
+DEMO_FACTS_A=facts.prompt_text(SHEET_A, "A")
+DEMO_FACTS_B=facts.prompt_text(SHEET_B, "B")
 BUILT_DEMOS=DEMO_FACTS_A+"\n"+DEMO_FACTS_B
+NOT_MEASURED_LINE=facts.not_measured_line(SHEET_A, SHEET_B)
 
 
 def result(name, company=None, model=None, error=None, demo=None, pitch_note=None, pitch_error=None, site=None):
@@ -312,6 +357,7 @@ customer_pain: one sentence, grounded in the text, about the deployment pain the
 tailoring: exactly 3 changes to make to a demo for this company, covering sample data, persona names and terminology.
 
 evidence: 1 to 4 quotes copied exactly from the site text above (the title, description, about page, customers page or job post), each at least 3 words, one for each thing the note says about the company. Copy the words, never paraphrase, and never quote the demos below. A sentence in the note that says the company or its customers get a result (cuts, reduces, saves, improves, faster, fewer) must rest on one of these quotes, otherwise leave it out.
+{NOT_MEASURED_LINE}
 pitch_note: a short note to the company's founder or FDE lead. It is written by an engineer who has built exactly two demos, A and B, listed below, and wants a conversation about a forward deployed engineer or solutions engineering role. The two demos:
 {BUILT_DEMOS}
 Rules for pitch_note:
@@ -331,6 +377,7 @@ Rules for pitch_note:
 
 # The fact sheet of each built demo, keyed by cluster. Other clusters have no built demo, so they get no facts.
 DEMO_FACTS_BY_CLUSTER={"A": DEMO_FACTS_A, "B": DEMO_FACTS_B}
+SHEET_BY_CLUSTER={"A": SHEET_A, "B": SHEET_B}
 
 
 def clean_note(company):
@@ -354,6 +401,9 @@ def guard_violations(company, site):
         violations=pitch.pitch_violations(company.pitch_note, guard_site, evidence=company.evidence)
     else:
         violations=pitch.pitch_violations(company.pitch_note, guard_site)
+    sheet=SHEET_BY_CLUSTER.get(company.cluster)
+    if sheet:
+        violations+=pitch.check_demo_claims(company.pitch_note, sheet)
     if company.cluster not in DEMO_FACTS_BY_CLUSTER and pitch.claims_built_demo(company.pitch_note):
         violations.append("claims a built demo for a cluster with no demo built")
     return violations
@@ -368,6 +418,21 @@ def junk_error(company, missing):
 
 
 def enrich(url, job_url=None):
+    """Enrich one site and add the production signals: prompt version, token usage, cost estimate, wall time."""
+    calls=[]
+    token=_USAGE.set(calls)
+    started=time.perf_counter()
+    try:
+        out=enrich_site(url, job_url)
+    finally:
+        _USAGE.reset(token)
+    out["prompt_version"]=PROMPT_VERSION
+    out["usage"]=summarise_usage(calls)
+    out["latency_ms"]=round((time.perf_counter()-started)*1000)
+    return out
+
+
+def enrich_site(url, job_url=None):
     print(f"Scraping {url}")
     site=get_description(url, job_url=job_url) if job_url else get_description(url)
     print("Scrape done")

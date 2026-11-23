@@ -10,3 +10,7 @@ wheels/
 .venv
 .DS_Store
 .env
+
+# Private: machine written notes. results/eval_results.csv is the public copy without note text.
+private/
+results/real_results.csv

@@ -274,6 +274,80 @@ DB_URL=postgresql://user:pass@localhost:5432/dbname uv run python -m scripts.che
 
 The script works only inside a throwaway schema called `migration_check`, so it never touches a real `companies` table. It creates the old table, inserts a row, applies `schema.sql` twice, checks the row survived with `NULL` in the new columns, checks the two indexes exist, and prints `MIGRATION OK` as its last line.
 
+## Running it
+
+You need Docker, a Gemini API key and a Groq API key (both have free tiers). This makes real API calls and uses a little of your quota.
+
+```bash
+git clone https://github.com/arch-vvc/gtm_agent
+cd gtm_agent
+cp .env.example .env
+```
+
+Put your two keys in `.env`. Leave `DB_URL` and `REDIS_HOST` as they are, they point at the containers.
+
+### Direct run over a list of companies
+
+One URL per line in `targets.txt` (blank lines and `#` comments are ignored):
+
+```bash
+printf '# my targets\npeakflo.co\ncekura.ai\n' > targets.txt
+docker compose up -d --build
+mkdir -p results
+docker compose run --rm -v "$PWD/results:/app/results" -v "$PWD/targets.txt:/app/targets.txt" worker /app/.venv/bin/python -m scripts.real_run --file targets.txt --csv results/real_results.csv --resume
+```
+
+`results/real_results.csv` holds machine written notes, so it is gitignored and stays on your disk. To read every note as a table, run `uv run python -m scripts.results_table --write`, which writes `private/results_table.md` (also gitignored). `uv run python -m scripts.results_table --check` says whether that file is current, and skips with exit 0 when the CSV is absent. To publish numbers without the notes, run `scripts.export_public` to write `results/eval_results.csv`, which has no note text.
+
+- A line may carry a job post link after the company, for example `ciroos.ai https://jobs.ashbyhq.com/ciroos/<id>`. Greenhouse, Lever and Ashby links are read through their public posting APIs, and the first 3000 characters of the job text are added to what the model sees and to what the grounding guard counts as on the site. Any other link, or a posting that is no longer listed, is ignored and the run carries on with the company site alone.
+- `--resume` skips URLs that already have a row without an error in the CSV and retries the rest, so a stopped run carries on where it left off.
+- `--delay SECONDS` (default 5) waits between companies to stay inside the free tiers. A `12 of 70` line shows progress.
+- URLs can also be given as arguments, and `--provider gemini|groq|all` tests one provider at a time.
+- The CSV has one row per URL, errors included. A cell that starts with `=`, `+`, `-` or `@` gets a leading apostrophe, and error text is redacted so keys do not leak.
+- Nothing is written to Postgres and nothing is queued. `--help` works without any keys set.
+- Without Docker for the app: `uv sync`, start a throwaway Redis (`docker run -d --name gtm-redis -p 6379:6379 redis:7`), load `.env`, then run `REDIS_HOST=localhost uv run python -m scripts.real_run --file targets.txt --csv results/real_results.csv --resume`. Remove it with `docker rm -f gtm-redis`.
+
+### Checking the cluster answers
+
+`evals/golden.csv` holds 38 companies with the cluster label from the author's tracker, set before the engine existed. After a run over those companies, score the CSV (no model call, no keys):
+
+```bash
+uv run python -m scripts.golden_eval --csv results/eval_results.csv
+```
+
+It prints demo choice (A, B or none, the choice that decides what gets sent), cluster accuracy against the 90 percent target, a confusion matrix, the held out rows on their own, the wrong clusters with the engine's reason, the failures and the companies not run. It exits 1 when demo choice is below the floor in `evals/floor.json` (add `--floor-file evals/floor.json`). The labels are one person's judgement and the clusters overlap, so this measures agreement with the tracker, not truth. Results and known limits are in [EVAL.md](EVAL.md).
+
+### The service in 5 minutes
+
+```bash
+docker compose up -d --build
+curl -X POST localhost:8000/enrich -H 'content-type: application/json' -d '{"url":"stripe.com"}'
+curl localhost:8000/jobs/<job_id>
+curl localhost:8000/companies/<company_id>/pitch
+```
+
+This starts Postgres, Redis, the API on http://localhost:8000 and a background worker. Poll the job until `status` is `done`, then read the company and its pitch. `docker compose logs app worker` shows output and `docker compose down` stops everything (data stays in the `gtm_pgdata` volume). The default database password is for local use only; set `POSTGRES_PASSWORD` in `.env` to change it. The endpoint reference is the API section above.
+
+## Limits
+
+- **Partial live evidence.** The tests mock the models. One live run covered 31 of 38 golden companies (27 answered, 4 failed) and was stopped by hand, so seven companies were never tried. The saved run is older than the code. See [EVAL.md](EVAL.md) for the numbers and what they do and do not show.
+- **The guard checks names, not facts.** A number written as digits must appear on the site, but an invented claim made of ordinary words, such as "cuts errors by half", passes. An invented name written in lower case passes too, and so does an invented name made only of words that each appear somewhere on the site.
+- **The demo claim check is phrase matching.** It missed 4 of 5 paraphrased latency claims, so treat it as a known limit and not coverage.
+- **A name that opens a sentence is not caught by design**, unless the next word is `AI`, `Labs` or `Inc`.
+- **The guard checks `pitch_note` only.** `customer_pain`, `tailoring` and `cluster_reason` can still contain names the site never mentioned.
+- **Style is partly enforced by the prompt only.** The word limit, the dash ban and the placeholder line are checked by code. British English and the conclusion first structure are only asked for in the prompt.
+- **Scraped page text is untrusted.** It is fenced in the prompt and the model is told not to follow instructions inside it. That reduces prompt injection but does not eliminate it, and a name an attacker puts in the page counts as grounded.
+- **The model can pick the wrong cluster.** The mapping from cluster to demo is code, but the cluster letter is the model's judgement. Read `cluster_reason`.
+- **Static HTML only.** No JavaScript rendering, so client rendered or bot blocking sites give `Site returned 403`, thin input or `hiring_fde` of `null`.
+- **The scraper checks every address it fetches.** Private, local and non standard port addresses are refused, but the host is resolved once for the check and again when connecting, so DNS rebinding is not fully closed.
+- **Small input.** The model sees the page title, the meta description, up to 2000 characters from the about page, up to 2000 from a customers page and one hiring line.
+- **Name matching can merge companies** that share a main domain label on different TLDs.
+- **Old rows have no pitch, and there is no re-enrich endpoint.**
+- **Failures are not stored in Postgres.** A failed job only lives in Redis, and job status expires after 24 hours.
+- **One worker, one job at a time.**
+- **No approval step in the database.** Notes are drafts. A Postgres approval status column and an approve endpoint are the next step, not built.
+- **For local use only.** There is no auth or rate limiting on the API. Docker publishes the API and Postgres on 127.0.0.1 only, with the default password `secret`. Change both before exposing it anywhere.
+
 ## Status history
 
 These are the detailed notes the README Status section summarises.

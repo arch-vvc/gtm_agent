@@ -220,7 +220,7 @@ def test_a_missing_tracker_exits_2(tmp_path, capsys):
 
 
 def test_the_results_csv_now_carries_the_evidence_quotes():
-    assert real_run.CSV_COLUMNS[-1] == "evidence"
+    assert "evidence" in real_run.CSV_COLUMNS
     row = dict(zip(real_run.CSV_COLUMNS, real_run.csv_row("a.example", out={
         "name": "A", "demo": "none built", "hiring_fde": None, "pitch_note": "n", "pitch_error": None,
         "model": "m", "error": None, "company": None, "evidence": ["first quote here", "second quote here"],

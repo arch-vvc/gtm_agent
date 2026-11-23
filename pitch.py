@@ -3,6 +3,7 @@ the grounding guard and the markdown rendering. No network, no API clients.
 """
 
 import re
+import unicodedata
 from urllib.parse import urlparse
 
 CLUSTERS = ("A", "B", "C", "D", "E", "F", "G")
@@ -80,8 +81,19 @@ ALLOWED_WORDS = frozenset(
         "loom", "repo", "github", "india", "indian", "english",
         # abbreviation tokens, so "Dr. Smith" with Smith on the site passes
         "dr", "mr", "mrs", "ms", "st", "inc", "ltd",
+        # Finance and engineering acronyms and job title words. These are generic: none is ever
+        # the name of a company or a product, so allowing them cannot let an invented company
+        # through. A name next to them (Zorvex in "Chief Zorvex") is still checked, and
+        # tests/test_guard_upgrade.py::test_invented_company_still_flagged guards the trade off.
+        "nav", "acid", "cfo", "ceo", "cto", "coo", "cmo", "cio", "cro", "sla", "kpi", "roi",
+        "sre", "dso", "soc", "etl", "sql", "saas",
+        "chief", "officer", "manager", "director", "head", "vice", "president", "lead",
+        "engineer", "ops",
     }
 )  # fmt: skip
+
+# Allowed too, but kept apart because they hold a digit (ALLOWED_WORDS is letters only).
+ALLOWED_MIXED_WORDS = frozenset({"b2b", "b2c"})
 
 PLACEHOLDERS = (LOOM, REPO)
 
@@ -117,14 +129,20 @@ WORD_PATTERN = re.compile(f"[^\\W_][^\\W_'{CURLY_APOSTROPHE}]*(?:['{CURLY_APOSTR
 
 
 def normalise_dashes(note):
-    """Turn every hyphen or dash character into a space, so a stray dash never costs a note.
+    """Normalise the text to NFKC, then turn every hyphen or dash character into a space.
+
+    NFKC first folds look alike forms (a full width hyphen, a small hyphen, a non breaking
+    hyphen) into plain characters, so a stray dash never costs a note.
 
     The house style writes "three way", so a space is the right replacement. Spaces
     left doubled by the replacement are collapsed, and line breaks are kept. A note
-    with no dash is returned unchanged. check_pitch_note still rejects a dash, as a
-    backstop for anything that reaches it without passing through here.
+    with no dash and nothing to fold is returned unchanged. check_pitch_note still rejects a
+    dash, as a backstop for anything that reaches it without passing through here.
     """
-    if not note or not any(char in note for char in DASH_CHARACTERS):
+    if not note:
+        return note
+    note = unicodedata.normalize("NFKC", note)
+    if not any(char in note for char in DASH_CHARACTERS):
         return note
     cleaned = note.translate({code: " " for code in DASH_CODE_POINTS})
     return re.sub(r"[ \t]{2,}", " ", cleaned)
@@ -290,7 +308,7 @@ def ungrounded_names(note, corpus):
     missing = []
     for word in candidate_names(note):
         lower = word.lower()
-        if lower in ALLOWED_WORDS:
+        if lower in ALLOWED_WORDS or lower in ALLOWED_MIXED_WORDS:
             continue
         if re.search(rf"\b{re.escape(lower)}\b", corpus, re.IGNORECASE):
             continue
@@ -385,7 +403,8 @@ LINK_WORDS = frozenset(
 
 def normalise_quote(text):
     """Lower case the text and reduce every run of punctuation, dashes and spaces to one space."""
-    return re.sub(r"[\W_]+", " ", (text or "").lower()).strip()
+    folded = unicodedata.normalize("NFKC", text or "")
+    return re.sub(r"[\W_]+", " ", folded.lower()).strip()
 
 
 def site_quote_text(site):
@@ -432,6 +451,54 @@ def check_outcome_claims(note, evidence):
             shared = max((len(content_words(sentence) & words) for words in quote_words), default=0)
             if shared < MIN_SHARED_WORDS:
                 violations.append(f"claim has no quote: '{sentence[:120]}' (quote it from the site or leave it out)")
+    return violations
+
+
+# A number with a unit, such as 100ms, 99%, 2 seconds or 3 crore. The unit must end the word.
+UNIT_NUMBER = re.compile(
+    r"(\d[\d,]*(?:\.\d+)?)\s*(ms|milliseconds?|msec|seconds?|secs?|s|minutes?|mins?|hours?|days?|"
+    r"%|percent|x|k|lakhs?|crores?|rupees|rs)(?![A-Za-z])",
+    re.IGNORECASE,
+)
+# A sentence that talks about the demo: the author's own build, or the demo by name (the sheet's Names line).
+DEMO_SENTENCE_WORDS = ("i built", "the demo", "my demo", "this tool")
+
+
+def unit_numbers(text):
+    """The numbers with a unit in the text, as normalised strings such as '100ms' and '99%'."""
+    folded = unicodedata.normalize("NFKC", text or "")
+    return {f"{number.replace(',', '')}{unit.lower()}" for number, unit in UNIT_NUMBER.findall(folded)}
+
+
+def check_demo_claims(note, facts):
+    """Return the claims about the demo that its fact sheet does not back.
+
+    facts is a sheet from facts.load. Only sentences that describe the demo are checked:
+    those with "I built", "the demo", "my demo", "this tool" or one of the sheet's names.
+    Such a sentence is rejected when it contains a phrase from "does not measure", or a number
+    with a unit (100ms, 99%) that is not under "Numbers you may quote". This is phrase
+    matching, so a paraphrase can slip through. Sentences about the company's own product
+    are left to the name and quote checks.
+    """
+    allowed = unit_numbers(" ".join(facts["numbers"]))
+    markers = DEMO_SENTENCE_WORDS + tuple(name.lower() for name in facts.get("names", []))
+    violations = []
+    for line in (note or "").splitlines():
+        if LOOM in line:
+            continue
+        for sentence in SENTENCE_SPLIT.split(line.strip()):
+            lower = unicodedata.normalize("NFKC", sentence).lower()
+            if not any(marker in lower for marker in markers):
+                continue
+            for phrase in facts["not_measured"]:
+                if re.search(rf"\b{re.escape(phrase.lower())}\b", lower):
+                    violations.append(
+                        f"note claims '{phrase}' for the demo, but {facts['file']} says it does not measure that"
+                    )
+            for number in sorted(unit_numbers(sentence) - allowed):
+                violations.append(
+                    f"note quotes {number} for the demo, which is not under Numbers you may quote in {facts['file']}"
+                )
     return violations
 
 

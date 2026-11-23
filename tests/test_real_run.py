@@ -106,6 +106,14 @@ CSV_HEADER = [
     "model",
     "error",
     "evidence",
+    "prompt_version",
+    "input_tokens",
+    "output_tokens",
+    "cost_usd_est",
+    "latency_ms",
+    "approval_status",
+    "approved_by",
+    "approved_at",
 ]
 
 
