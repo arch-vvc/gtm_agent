@@ -2,7 +2,7 @@
 
 gtm_agent is a pitch engine for forward deployed engineer (FDE) outreach. You give it a startup's URL. It returns the cluster the company belongs to (A to G), the demo to send, the deployment pain the company's customers likely have, three changes to tailor the demo, and a pitch note of 150 words or fewer that names only things found on the company's own site (a name check, not a fact check, see [Limits](#limits) for the honest caveat). It also reports whether the company's careers page lists a forward deployed or solutions engineer role.
 
-## Results
+## Demo list of companies
 
 <!-- results:start -->
 | Company | Cluster | Demo | Hiring FDE | Cluster reason (quoted from the site) | Note (first line) | What the automatic checks found |
@@ -64,7 +64,7 @@ Put your two keys in `.env`. Leave `DB_URL` and `REDIS_HOST` as they are, they p
 One URL per line in `targets.txt` (blank lines and `#` comments are ignored):
 
 ```bash
-printf '# my targets\npeakflo.co\ncekura.ai\n' > targets.txt
+printf '# demo list\npeakflo.co\ncekura.ai\n' > targets.txt
 docker compose up -d --build
 mkdir -p results
 docker compose run --rm -v "$PWD/results:/app/results" -v "$PWD/targets.txt:/app/targets.txt" worker /app/.venv/bin/python -m scripts.real_run --file targets.txt --csv results/real_results.csv --resume
@@ -114,7 +114,7 @@ Cluster table, grounding guard rules, fallback behaviour, duplicates and the dat
 
 ## Limits
 
-- **Partial live evidence.** The tests mock the models. One live run covered 32 of 39 targets (28 answered, 4 failed) and was stopped by hand, so seven companies were never tried. Free tier cooldowns and 504 errors made it slow. The cluster is the model's judgement and has not been checked against a labelled set yet.
+- **Partial live evidence.** The tests mock the models. One live run covered 32 of the 39 companies on the demo list (28 answered, 4 failed) and was stopped by hand, so seven companies were never tried. Free tier cooldowns and 504 errors made it slow. The cluster is the model's judgement and has not been checked against a labelled set yet.
 - **The guard checks names, not facts.** A number written as digits must appear on the site, but an invented claim made of ordinary words, such as "cuts errors by half", passes. An invented name written in lower case passes too, and so does an invented name made only of words that each appear somewhere on the site.
 - **A name that opens a sentence is not caught by design**, unless the next word is `AI`, `Labs` or `Inc`.
 - **The guard checks `pitch_note` only.** `customer_pain`, `tailoring` and `cluster_reason` can still contain names the site never mentioned.

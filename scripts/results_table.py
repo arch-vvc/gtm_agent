@@ -1,4 +1,4 @@
-"""Turn results/real_results.csv into the Markdown table in the README Results section.
+"""Turn results/real_results.csv into the Markdown table in the README "Demo list of companies" section.
 
 Usage from the repo root:
 

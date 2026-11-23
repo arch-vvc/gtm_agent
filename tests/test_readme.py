@@ -28,7 +28,7 @@ def test_no_en_or_em_dash():
 
 
 def test_results_section_is_a_placeholder_or_a_generated_table():
-    results = section("Results")
+    results = section("Demo list of companies")
     assert README.count("<!-- results:start -->") == 1
     assert README.count("<!-- results:end -->") == 1
     assert README.index("<!-- results:start -->") < README.index("<!-- results:end -->")
@@ -45,8 +45,8 @@ def test_results_section_is_a_placeholder_or_a_generated_table():
 
 
 def test_results_refresh_command_is_documented():
-    assert "scripts.results_table --write-readme" in section("Results")
-    assert "--check" in section("Results")
+    assert "scripts.results_table --write-readme" in section("Demo list of companies")
+    assert "--check" in section("Demo list of companies")
     assert "scripts.results_table --write-readme" in section("Try it")
 
 
@@ -88,7 +88,7 @@ def test_csv_flag_is_documented():
 def test_readme_is_short_and_in_the_agreed_order():
     assert len(README.splitlines()) < 160
     headings = re.findall(r"^## (.+)$", README, re.MULTILINE)
-    wanted = ["Results", "Try it", "How it works", "Limits", "Status"]
+    wanted = ["Demo list of companies", "Try it", "How it works", "Limits", "Status"]
     assert [h for h in headings if h in wanted] == wanted
     assert len(section("How it works").strip().splitlines()) <= 12
     assert len(section("Status").strip().splitlines()) <= 8
