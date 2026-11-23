@@ -1,6 +1,6 @@
 # Fact sheet: invoice exception triage demo
 
-Repo: https://github.com/OWNER/REPLACE_ME_invoice_exception_triage
+Repo: https://github.com/arch-vvc/invoice-exception-triage
 Names: invoice exception triage, invoice triage
 
 ## What it does

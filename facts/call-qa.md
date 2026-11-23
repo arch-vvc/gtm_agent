@@ -1,6 +1,6 @@
 # Fact sheet: voice agent call QA demo
 
-Repo: https://github.com/OWNER/REPLACE_ME_call_qa
+Repo: https://github.com/arch-vvc/voice-agent-call-qa
 Names: voice agent call QA, call QA
 
 ## What it does

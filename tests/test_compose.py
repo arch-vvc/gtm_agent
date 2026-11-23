@@ -25,5 +25,5 @@ def test_db_password_comes_from_a_variable_with_a_default():
 
 
 def test_readme_says_default_password_is_local_only():
-    readme = (ROOT / "README.md").read_text()
+    readme = (ROOT / "docs/DESIGN.md").read_text()
     assert "default database password is for local use only" in readme

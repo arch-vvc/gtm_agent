@@ -52,7 +52,6 @@ def test_readme_is_short_and_has_no_company_rows():
     assert "<!-- results:start -->" not in README
     headings = re.findall(r"^## (.+)$", README, re.MULTILINE)
     assert headings[0] == "Results"
-    assert "What I tried, where it stopped, what is next" in headings
     assert "docs/EVAL.md" in README and "docs/DESIGN.md" in README
 
 

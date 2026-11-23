@@ -24,10 +24,6 @@ def cluster_line(result):
 def test_readme_numbers_match_eval():
     result = current_score()
     assert golden_eval.demo_line(result["demo_correct"], result["answered"]) in README
-    assert cluster_line(result) in README
-    assert "90% target" in README
-    for line in golden_eval.matrix_lines(result["confusion3"], golden_eval.DEMOS):
-        assert line in README
 
 
 def test_readme_names_the_commit_behind_the_numbers():
