@@ -35,6 +35,14 @@ APPROVAL_COLUMNS = ["approval_status", "approved_by", "approved_at"]
 SHEETS = {"A": "call-qa", "B": "invoice-exception-triage"}
 
 
+def model_label(row):
+    """Which model wrote the note. Groq answers only when Gemini failed, so a Groq note is marked FALLBACK."""
+    model = (row.get("model") or "").strip()
+    if not model:
+        return "model unknown"
+    return model if model.startswith("gemini") else f"{model} FALLBACK, read it twice"
+
+
 def guard_problems(row):
     """Why this row's note cannot be approved. An empty list means it passes."""
     note = (row.get("pitch_note") or "").strip()
@@ -106,7 +114,7 @@ def main(argv=None):
     if args.list_ready:
         ready = [row for row in rows if row["approval_status"] == "approved" and (row.get("pitch_note") or "").strip()]
         for row in ready:
-            print(f"{row['url']}\t{row.get('approved_by', '')}\t{row.get('approved_at', '')}")
+            print(f"{row['url']}\t{row.get('approved_by', '')}\t{row.get('approved_at', '')}\t{model_label(row)}")
         print(f"{len(ready)} approved of {len(rows)} rows")
         return 0
 
@@ -140,7 +148,7 @@ def main(argv=None):
         approved_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
     )
     write_csv(args.csv, fieldnames, rows)
-    print(f"Approved {row['url']} by {approver} at {row['approved_at']}")
+    print(f"Approved {row['url']} by {approver} at {row['approved_at']} (note written by {model_label(row)})")
     return 0
 
 
