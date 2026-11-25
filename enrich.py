@@ -407,6 +407,7 @@ def guard_violations(company, site):
         missing=[word for word in pitch.ungrounded_names(text, corpus) if not word.isupper()]
         if missing:
             violations.append(f"names not found on the site in {field}: " + ", ".join(missing))
+    violations+=pitch.check_tailoring_sources(company.tailoring)
     sheet=SHEET_BY_CLUSTER.get(company.cluster)
     if sheet:
         violations+=pitch.check_demo_claims(company.pitch_note, sheet)
