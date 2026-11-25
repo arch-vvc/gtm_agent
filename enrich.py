@@ -404,6 +404,8 @@ def guard_violations(company, site):
     corpus=pitch.build_corpus(guard_site)
     for field, text in [("customer_pain", company.customer_pain), *(("tailoring", item) for item in company.tailoring)]:
         # Acronyms such as VAT or DSO are domain vocabulary, not company names, so only words with lower case letters are checked.
+        # A short label before a colon ("Persona names: Set up ...") opens the sentence, so the colon does not hide a verb as a name.
+        text=re.sub(r"^[^:.\n]{1,40}:\s+", "", text)
         missing=[word for word in pitch.ungrounded_names(text, corpus) if not word.isupper()]
         if missing:
             violations.append(f"names not found on the site in {field}: " + ", ".join(missing))
