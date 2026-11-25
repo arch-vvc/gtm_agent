@@ -2,9 +2,11 @@
 
 gtm_agent is a pitch engine for forward deployed engineer (FDE) outreach. You give it a startup's URL. It returns the cluster the company belongs to (A to G), the demo to send, the deployment pain the company's customers likely have, three changes to tailor the demo, and a pitch note of 150 words or fewer. A guard checks the note against the company's site text: names it cannot find on the site are flagged, and number and outcome claims are caught by pattern checks that miss some paraphrases (see [docs/EVAL.md](docs/EVAL.md)). It also reports whether the careers page lists a forward deployed or solutions engineer role.
 
+The demos it sends are the real proof of work, so start there: [Call QA for voice agents](https://github.com/arch-vvc/voice-agent-call-qa) and [Invoice exception triage](https://github.com/arch-vvc/invoice-exception-triage). Each runs in 60 seconds.
+
 ## Results
 
-Scored by `scripts.golden_eval` against 38 companies labelled by hand before the engine existed, from the saved live run `results/eval_results.csv` (commit `fcd391e`):
+Scored by `scripts.golden_eval` against 38 companies labelled by hand in my private tracker before the engine was built (the tracker is not in this repo, so that timing cannot be checked here), from the saved live run `results/eval_results.csv` (commit `fcd391e`):
 
 ```
 demo choice (A, B or none): 23 of 27 answered (85%)

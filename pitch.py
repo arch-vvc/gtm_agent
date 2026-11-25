@@ -357,6 +357,31 @@ CLAIM_PATTERN = re.compile(
 BUILT_PATTERN = re.compile(FIRST_PERSON + r"built\b", re.IGNORECASE)
 
 
+# Sample data must be synthetic. A tailoring item that takes data or scripts from a named company is rejected,
+# even when the company is named on the site (a customer logo is not permission to use their data).
+DATA_NOUNS = r"(?:data|scripts?|transcripts?|invoices?|records?|calls?|logs?|documents?|exports?)"
+NAME_WORD = r"[A-Z][\w&]*"
+DATA_SOURCE_PATTERNS = [
+    re.compile(rf"\b{DATA_NOUNS}\s+(?:from|of)\s+(?:the\s+)?({NAME_WORD}(?:\s+{NAME_WORD})*)"),
+    re.compile(rf"({NAME_WORD}(?:\s+{NAME_WORD})*)['{CURLY_APOSTROPHE}]s\s+(?:\w+\s+){{0,2}}{DATA_NOUNS}\b"),
+]
+# Tools whose export formats the demo imitates are not companies whose data is copied.
+FORMAT_NAMES = {"tally", "zoho", "excel", "csv", "gst", "pdf"}
+
+
+def check_tailoring_sources(items):
+    """Return one violation per tailoring item that takes sample data or scripts from a named company."""
+    violations = []
+    for item in items:
+        for pattern in DATA_SOURCE_PATTERNS:
+            for match in pattern.finditer(item):
+                words = match.group(1).split()
+                if words[0].lower() in FORMAT_NAMES:
+                    continue
+                violations.append(f"tailoring takes sample data from a named company: {match.group(1)}")
+    return violations
+
+
 def check_pitch_claims(note):
     """Return one violation per first person past tense claim of work other than "I built".
 
@@ -480,7 +505,7 @@ def check_demo_claims(note, facts):
     matching, so a paraphrase can slip through. Sentences about the company's own product
     are left to the name and quote checks.
     """
-    allowed = unit_numbers(" ".join(facts["numbers"]))
+    allowed = unit_numbers(" ".join(facts.get("numbers", [])))
     markers = DEMO_SENTENCE_WORDS + tuple(name.lower() for name in facts.get("names", []))
     violations = []
     for line in (note or "").splitlines():
@@ -490,7 +515,7 @@ def check_demo_claims(note, facts):
             lower = unicodedata.normalize("NFKC", sentence).lower()
             if not any(marker in lower for marker in markers):
                 continue
-            for phrase in facts["not_measured"]:
+            for phrase in facts.get("not_measured", []):
                 if re.search(rf"\b{re.escape(phrase.lower())}\b", lower):
                     violations.append(
                         f"note claims '{phrase}' for the demo, but {facts['file']} says it does not measure that"

@@ -213,8 +213,8 @@ def test_csv_leaves_cost_blank_when_unknown():
 
 # A change to the prompt text has to come with a new PROMPT_VERSION. This pins both: if the
 # prompt changes, this test fails until PROMPT_VERSION is bumped and the pair below is updated.
-PINNED_PROMPT_VERSION = "pitch-2026-11-23.1"
-PINNED_PROMPT_SHA256 = "fc08ad3b9048b91751e863d713c08e89976fdef125bdf118fe385f823a7172c8"
+PINNED_PROMPT_VERSION = "pitch-2026-11-25.1"
+PINNED_PROMPT_SHA256 = "027494027dc903d94b9a51ba4832a5c292444a1be2183b06e3f37eed813a4523"
 FIXED_SITE = {
     "name": "Echobench",
     "title": "Echobench | Voice AI testing",

@@ -189,3 +189,26 @@ def test_resume_keeps_approved_rows(monkeypatch, tmp_path):
     assert rows["ledgerly.example"]["approval_status"] == "approved"
     assert rows["other.example"]["approval_status"] == "needs_review"
     assert len(calls) == 1
+
+
+def test_approve_says_which_model_wrote_the_note_and_flags_a_fallback(tmp_path, capsys):
+    path = tmp_path / "r.csv"
+    write_fixture(path, [
+        {**row_for("a.example"), "model": "gemini-2.5-flash"},
+        {**row_for("b.example"), "model": "llama-3.3-70b-versatile"},
+    ])
+    approve.main(["--csv", str(path), "--url", "a.example", "--by", "bobby"])
+    out = capsys.readouterr().out
+    assert "gemini-2.5-flash" in out and "FALLBACK" not in out
+    approve.main(["--csv", str(path), "--url", "b.example", "--by", "bobby"])
+    out = capsys.readouterr().out
+    assert "llama-3.3-70b-versatile" in out and "FALLBACK" in out
+
+
+def test_list_ready_shows_the_model(tmp_path, capsys):
+    path = tmp_path / "r.csv"
+    write_fixture(path, [{**row_for("b.example"), "model": "llama-3.3-70b-versatile"}])
+    approve.main(["--csv", str(path), "--url", "b.example", "--by", "bobby"])
+    capsys.readouterr()
+    approve.main(["--csv", str(path), "--list-ready"])
+    assert "llama-3.3-70b-versatile" in capsys.readouterr().out

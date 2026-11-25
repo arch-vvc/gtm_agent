@@ -35,7 +35,7 @@ GROQ_MAX_COMPLETION_TOKENS=4096
 
 
 # Bump this dated string whenever the prompt text changes. tests/test_usage_signals.py pins a hash of it.
-PROMPT_VERSION="pitch-2026-11-23.1"
+PROMPT_VERSION="pitch-2026-11-25.1"
 
 # Token usage of every model call made during one enrich() call. ask_gemini and ask_groq add to it
 # through record_usage, so their return shape stays (company, model).
@@ -354,7 +354,7 @@ Choose G only if the core of the product is an agent that controls a screen, bro
 
 cluster_reason: one sentence that quotes the site's own words.
 customer_pain: one sentence, grounded in the text, about the deployment pain the company's customers have.
-tailoring: exactly 3 changes to make to a demo for this company, covering sample data, persona names and terminology.
+tailoring: exactly 3 changes to make to a demo for this company, covering sample data, persona names and terminology. Personas are plain roles for this industry, never the company's own data.
 
 evidence: 1 to 4 quotes copied exactly from the site text above (the title, description, about page, customers page or job post), each at least 3 words, one for each thing the note says about the company. Copy the words, never paraphrase, and never quote the demos below. A sentence in the note that says the company or its customers get a result (cuts, reduces, saves, improves, faster, fewer) must rest on one of these quotes, otherwise leave it out.
 {NOT_MEASURED_LINE}
@@ -362,7 +362,7 @@ pitch_note: a short note to the company's founder or FDE lead. It is written by 
 {BUILT_DEMOS}
 Rules for pitch_note:
 1. Write in the first person singular, for example "I built ..." for clusters A and B or "I would build ..." for the others. Never speak as a vendor: never say "our product" or "our workflow", and never tell the company to "adopt" or "buy".
-2. If you choose cluster A or B, present the demo as something I built to show how I would work on this company's customers' deployment problems, adapted using the tailoring changes. If the company already sells the same kind of product, say the demo was built to understand that problem space, not that the company needs it.
+2. If you choose cluster A or B, present the demo as something I built to show how I would work on this company's customers' deployment problems, adapted using the tailoring changes. If the company already sells the same kind of product, say say the demo was built to understand that problem space, not that the company needs it, and never that it "can help" them.
 3. Structure: the first line is the conclusion in one sentence (what I built (clusters A and B) or would build (the other clusters) and why it matters to this company's customers), then a blank line, then short reasons, each on a new line starting with First, Second and Third (no list markers), then a blank line, then the last line exactly as below. Clusters A and B keep 2 or 3 reasons. For clusters C to G write exactly two reasons, First and Second, and offer to show a first version inside the second reason.
 4. At most 150 words, in British English.
 5. No hyphens or dashes of any kind.
@@ -401,6 +401,15 @@ def guard_violations(company, site):
         violations=pitch.pitch_violations(company.pitch_note, guard_site, evidence=company.evidence)
     else:
         violations=pitch.pitch_violations(company.pitch_note, guard_site)
+    corpus=pitch.build_corpus(guard_site)
+    for field, text in [("customer_pain", company.customer_pain), *(("tailoring", item) for item in company.tailoring)]:
+        # Acronyms such as VAT or DSO are domain vocabulary, not company names, so only words with lower case letters are checked.
+        # A short label before a colon ("Persona names: Set up ...") opens the sentence, so the colon does not hide a verb as a name.
+        text=re.sub(r"^[^:.\n]{1,40}:\s+", "", text)
+        missing=[word for word in pitch.ungrounded_names(text, corpus) if not word.isupper()]
+        if missing:
+            violations.append(f"names not found on the site in {field}: " + ", ".join(missing))
+    violations+=pitch.check_tailoring_sources(company.tailoring)
     sheet=SHEET_BY_CLUSTER.get(company.cluster)
     if sheet:
         violations+=pitch.check_demo_claims(company.pitch_note, sheet)
