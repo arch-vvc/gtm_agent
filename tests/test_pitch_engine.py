@@ -1036,3 +1036,13 @@ def test_guard_rejects_invented_name_in_customer_pain(monkeypatch):
     enrich.enrich("ledgerly.example")
 
     assert len(prompts) == 2 and "customer_pain" in prompts[1] and "Zomato" in prompts[1]
+
+
+def test_prompt_keeps_the_understand_rule_and_the_persona_rule(monkeypatch):
+    use_site(monkeypatch, AP_SITE)
+    prompts = script_ask(monkeypatch, [(make_company("B", AP_NOTE), "fake-model")])
+
+    enrich.enrich("ledgerly.example")
+
+    assert 'and never that it "can help" them' in prompts[0]
+    assert "Personas are plain roles for this industry" in prompts[0]
