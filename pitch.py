@@ -480,7 +480,7 @@ def check_demo_claims(note, facts):
     matching, so a paraphrase can slip through. Sentences about the company's own product
     are left to the name and quote checks.
     """
-    allowed = unit_numbers(" ".join(facts["numbers"]))
+    allowed = unit_numbers(" ".join(facts.get("numbers", [])))
     markers = DEMO_SENTENCE_WORDS + tuple(name.lower() for name in facts.get("names", []))
     violations = []
     for line in (note or "").splitlines():
@@ -490,7 +490,7 @@ def check_demo_claims(note, facts):
             lower = unicodedata.normalize("NFKC", sentence).lower()
             if not any(marker in lower for marker in markers):
                 continue
-            for phrase in facts["not_measured"]:
+            for phrase in facts.get("not_measured", []):
                 if re.search(rf"\b{re.escape(phrase.lower())}\b", lower):
                     violations.append(
                         f"note claims '{phrase}' for the demo, but {facts['file']} says it does not measure that"

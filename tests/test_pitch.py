@@ -689,3 +689,9 @@ def test_an_invented_name_ending_in_s_is_still_caught():
     note = "Ledgerly could try FlowDesks for this.\n\nLoom: [LOOM_URL] Repo: [REPO_URL]"
 
     assert pitch.ungrounded_names(note, "Ledgerly automates accounts payable") == ["FlowDesks"]
+
+
+def test_check_demo_claims_survives_a_sheet_with_no_numbers_key():
+    sheet = {"file": "x.md", "names": [], "not_measured": []}
+    assert pitch.check_demo_claims("I built a demo.", sheet) == []
+    assert pitch.check_demo_claims("I built a demo that cuts 99% of errors.", sheet) != []
