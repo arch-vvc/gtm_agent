@@ -401,6 +401,12 @@ def guard_violations(company, site):
         violations=pitch.pitch_violations(company.pitch_note, guard_site, evidence=company.evidence)
     else:
         violations=pitch.pitch_violations(company.pitch_note, guard_site)
+    corpus=pitch.build_corpus(guard_site)
+    for field, text in [("customer_pain", company.customer_pain), *(("tailoring", item) for item in company.tailoring)]:
+        # Acronyms such as VAT or DSO are domain vocabulary, not company names, so only words with lower case letters are checked.
+        missing=[word for word in pitch.ungrounded_names(text, corpus) if not word.isupper()]
+        if missing:
+            violations.append(f"names not found on the site in {field}: " + ", ".join(missing))
     sheet=SHEET_BY_CLUSTER.get(company.cluster)
     if sheet:
         violations+=pitch.check_demo_claims(company.pitch_note, sheet)

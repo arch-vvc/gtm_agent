@@ -76,7 +76,11 @@ def make_company(cluster, pitch_note, **changes):
         "cluster": cluster,
         "cluster_reason": 'The site says "automates accounts payable for finance teams".',
         "customer_pain": "Finance teams match invoices, purchase orders and payments by hand.",
-        "tailoring": ["Use Tally style sample data", "Name personas after AP clerks", "Say GST not VAT"],
+        "tailoring": (
+            ["Use Tally style sample data", "Name personas after AP clerks", "Say GST not VAT"]
+            if cluster == "B"
+            else ["Use call transcripts as sample data", "Name personas after callers", "Say agent not bot"]
+        ),
         "pitch_note": pitch_note,
     }
     return Company(**{**fields, **changes})
@@ -1010,3 +1014,25 @@ def test_guard_flags_have_built_and_ive_built_for_cluster_c():
 
 def test_guard_allows_i_built_for_cluster_b():
     assert enrich.guard_violations(make_company("B", AP_NOTE), AP_SITE) == []
+
+
+def test_guard_rejects_invented_name_in_tailoring_and_retries(monkeypatch):
+    use_site(monkeypatch, AP_SITE)
+    bad = make_company("B", AP_NOTE, tailoring=["Use Ninja Van invoice formats", "Rename the persona", "Use DSO terms"])
+    prompts = script_ask(monkeypatch, [(bad, "first-model"), (make_company("B", AP_NOTE), "second-model")])
+
+    out = enrich.enrich("ledgerly.example")
+
+    assert len(prompts) == 2
+    assert "tailoring" in prompts[1] and "Ninja" in prompts[1]
+    assert out["pitch_note"] == AP_NOTE and out["model"] == "second-model"
+
+
+def test_guard_rejects_invented_name_in_customer_pain(monkeypatch):
+    use_site(monkeypatch, AP_SITE)
+    bad = make_company("B", AP_NOTE, customer_pain="Teams at Zomato lose hours matching invoices.")
+    prompts = script_ask(monkeypatch, [(bad, "first-model"), (make_company("B", AP_NOTE), "second-model")])
+
+    enrich.enrich("ledgerly.example")
+
+    assert len(prompts) == 2 and "customer_pain" in prompts[1] and "Zomato" in prompts[1]
